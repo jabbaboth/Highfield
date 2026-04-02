@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+@theme {
+  --color-feeder-111: #16a34a;
+  --color-feeder-112: #2563eb;
+  --color-feeder-113: #9333ea;
+  --color-feeder-114: #dc2626;
+}
