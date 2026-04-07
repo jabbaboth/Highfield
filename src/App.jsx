@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import PinScreen from './components/PinScreen'
 import Layout from './components/Layout'
+import { ContractDataProvider } from './lib/useContractData'
 import Jobs from './pages/Jobs'
 import Planner from './pages/Planner'
 import Progress from './pages/Progress'
@@ -15,14 +16,16 @@ export default function App() {
   }
 
   return (
-    <Layout>
-      <Routes>
-        <Route path="/jobs" element={<Jobs />} />
-        <Route path="/planner" element={<Planner />} />
-        <Route path="/progress" element={<Progress />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="*" element={<Navigate to="/jobs" replace />} />
-      </Routes>
-    </Layout>
+    <ContractDataProvider>
+      <Layout>
+        <Routes>
+          <Route path="/jobs" element={<Jobs />} />
+          <Route path="/planner" element={<Planner />} />
+          <Route path="/progress" element={<Progress />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/jobs" replace />} />
+        </Routes>
+      </Layout>
+    </ContractDataProvider>
   )
 }

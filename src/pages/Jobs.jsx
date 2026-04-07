@@ -26,12 +26,13 @@ export default function Jobs() {
 
   const filtered = useMemo(() => {
     return jobs.filter(j => {
+      const jid = String(j.job_id)
       if (feederFilter && String(j.feeder) !== feederFilter) return false
       if (streetFilter && j.street !== streetFilter) return false
       if (ewpFilter && j.ewp_type !== ewpFilter) return false
-      if (statusFilter === 'Complete' && !completionMap[j.job_id]) return false
-      if (statusFilter === 'Planned' && (!assignmentMap[j.job_id] || completionMap[j.job_id])) return false
-      if (statusFilter === 'Unplanned' && (assignmentMap[j.job_id] || completionMap[j.job_id])) return false
+      if (statusFilter === 'Complete' && !completionMap[jid]) return false
+      if (statusFilter === 'Planned' && (!assignmentMap[jid] || completionMap[jid])) return false
+      if (statusFilter === 'Unplanned' && (assignmentMap[jid] || completionMap[jid])) return false
       if (search) {
         const q = search.toLowerCase()
         const match = [j.full_address, j.species, j.job_id].some(v => v && String(v).toLowerCase().includes(q))
@@ -57,11 +58,22 @@ export default function Jobs() {
     })
   }
 
+  const [assigning, setAssigning] = useState(false)
+  const [assignError, setAssignError] = useState(null)
+
   async function handleAssign() {
     if (!modalCrew || !modalDate) return
-    await assignJobs([...selected], modalCrew, modalDate)
-    setSelected(new Set())
-    setShowModal(false)
+    setAssigning(true)
+    setAssignError(null)
+    const error = await assignJobs([...selected], modalCrew, modalDate)
+    setAssigning(false)
+    if (error) {
+      setAssignError(error.message || 'Failed to assign jobs')
+      console.error('Assign error:', error)
+    } else {
+      setSelected(new Set())
+      setShowModal(false)
+    }
   }
 
   if (loading) return <div className="p-4 text-gray-500">Loading jobs...</div>
@@ -102,8 +114,9 @@ export default function Jobs() {
       {/* Job list */}
       <div className="flex-1 overflow-auto p-3 space-y-2">
         {filtered.map(job => {
-          const assignment = assignmentMap[job.job_id]
-          const completion = completionMap[job.job_id]
+          const jid = String(job.job_id)
+          const assignment = assignmentMap[jid]
+          const completion = completionMap[jid]
           const isExpanded = expanded.has(job.job_id)
           const isSelected = selected.has(job.job_id)
 
@@ -200,14 +213,17 @@ export default function Jobs() {
               <label className="text-sm text-gray-600 block mb-1">Date</label>
               <input type="date" value={modalDate} onChange={e => setModalDate(e.target.value)} className="w-full border rounded-lg px-3 py-2" />
             </div>
+            {assignError && (
+              <p className="text-red-600 text-sm bg-red-50 rounded-lg p-2">{assignError}</p>
+            )}
             <div className="flex gap-2">
-              <button onClick={() => setShowModal(false)} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
+              <button onClick={() => { setShowModal(false); setAssignError(null) }} className="flex-1 py-2 border rounded-lg text-sm">Cancel</button>
               <button
                 onClick={handleAssign}
-                disabled={!modalCrew}
+                disabled={!modalCrew || assigning}
                 className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:bg-gray-300"
               >
-                Assign
+                {assigning ? 'Assigning...' : 'Assign'}
               </button>
             </div>
           </div>

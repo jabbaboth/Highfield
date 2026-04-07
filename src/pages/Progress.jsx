@@ -10,7 +10,7 @@ export default function Progress() {
   const feederStats = useMemo(() => {
     return FEEDERS.map(f => {
       const fJobs = jobs.filter(j => String(j.feeder) === f)
-      const done = fJobs.filter(j => completionMap[j.job_id])
+      const done = fJobs.filter(j => completionMap[String(j.job_id)])
       const totalSpans = fJobs.reduce((s, j) => s + (parseFloat(j.spans) || 0), 0)
       const doneSpans = done.reduce((s, j) => s + (parseFloat(j.spans) || 0), 0)
       const totalHs = fJobs.reduce((s, j) => s + (parseFloat(j.hs_hrs) || 0), 0)
@@ -34,18 +34,18 @@ export default function Progress() {
     list.sort((a, b) => {
       if (sortBy === 'feeder') return String(a.feeder).localeCompare(String(b.feeder))
       if (sortBy === 'status') {
-        const sa = completionMap[a.job_id] ? 2 : assignmentMap[a.job_id] ? 1 : 0
-        const sb = completionMap[b.job_id] ? 2 : assignmentMap[b.job_id] ? 1 : 0
+        const sa = completionMap[String(a.job_id)] ? 2 : assignmentMap[String(a.job_id)] ? 1 : 0
+        const sb = completionMap[String(b.job_id)] ? 2 : assignmentMap[String(b.job_id)] ? 1 : 0
         return sa - sb
       }
       if (sortBy === 'crew') {
-        const ca = assignmentMap[a.job_id]?.crew_name || 'zzz'
-        const cb = assignmentMap[b.job_id]?.crew_name || 'zzz'
+        const ca = assignmentMap[String(a.job_id)]?.crew_name || 'zzz'
+        const cb = assignmentMap[String(b.job_id)]?.crew_name || 'zzz'
         return ca.localeCompare(cb)
       }
       if (sortBy === 'date') {
-        const da = assignmentMap[a.job_id]?.planned_date || '9999'
-        const db = assignmentMap[b.job_id]?.planned_date || '9999'
+        const da = assignmentMap[String(a.job_id)]?.planned_date || '9999'
+        const db = assignmentMap[String(b.job_id)]?.planned_date || '9999'
         return da.localeCompare(db)
       }
       return 0
@@ -95,8 +95,8 @@ export default function Progress() {
       {/* Job list */}
       <div className="space-y-1">
         {filtered.map(job => {
-          const assignment = assignmentMap[job.job_id]
-          const completion = completionMap[job.job_id]
+          const assignment = assignmentMap[String(job.job_id)]
+          const completion = completionMap[String(job.job_id)]
           return (
             <div key={job.job_id} className={`flex items-center gap-3 p-2.5 bg-white rounded-lg border ${completion ? 'opacity-60' : ''}`}>
               <div className={`w-1.5 self-stretch rounded-full ${feederBgClass(job.feeder)}`} />

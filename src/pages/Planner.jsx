@@ -47,7 +47,7 @@ export default function Planner() {
   }, [crews, dayAssignments, jobMap])
 
   const unplanned = useMemo(() => {
-    return jobs.filter(j => !assignmentMap[j.job_id] && !completionMap[j.job_id])
+    return jobs.filter(j => !assignmentMap[String(j.job_id)] && !completionMap[String(j.job_id)])
   }, [jobs, assignmentMap, completionMap])
 
   function toggleUnplanned(id) {
@@ -118,7 +118,7 @@ export default function Planner() {
                     <p className="text-xs text-gray-400 p-3 text-center">No jobs</p>
                   )}
                   {jobList.map(job => {
-                    const isComplete = !!completionMap[job.job_id]
+                    const isComplete = !!completionMap[String(job.job_id)]
                     return (
                       <div key={job.job_id} className={`p-2.5 ${isComplete ? 'opacity-50' : ''}`}>
                         <div className="flex items-start gap-2">
