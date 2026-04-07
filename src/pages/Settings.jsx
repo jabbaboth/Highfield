@@ -1,9 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useContractData } from '../lib/useContractData'
 
 export default function Settings() {
-  const { jobs, assignments, completions, completionMap, crews, addCrew, removeCrew, loading } = useContractData()
+  const { jobs, assignments, completions, completionMap, crews, addCrew, removeCrew, importJobs, loading } = useContractData()
   const [newCrew, setNewCrew] = useState('')
+  const [importStatus, setImportStatus] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef()
 
   const stats = useMemo(() => {
     const totalSpans = jobs.reduce((s, j) => s + (parseFloat(j.spans) || 0), 0)
@@ -44,10 +47,54 @@ export default function Settings() {
     URL.revokeObjectURL(url)
   }
 
+  async function handleImport(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    setImportStatus(null)
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      if (!Array.isArray(data)) throw new Error('JSON must be an array of jobs')
+      const errors = await importJobs(data)
+      if (errors) {
+        setImportStatus({ ok: false, msg: `Imported with ${errors.length} errors` })
+      } else {
+        setImportStatus({ ok: true, msg: `Imported ${data.length} jobs successfully` })
+      }
+    } catch (err) {
+      setImportStatus({ ok: false, msg: err.message })
+    }
+    setImporting(false)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
   if (loading) return <div className="p-4 text-gray-500">Loading...</div>
 
   return (
     <div className="p-4 space-y-6 max-w-lg mx-auto">
+      {/* Import jobs */}
+      <section className="bg-white rounded-xl border shadow-sm p-4">
+        <h2 className="font-bold text-sm mb-2">Import Jobs</h2>
+        <p className="text-xs text-gray-500 mb-3">Upload your highfield_jobs.json file. This replaces all existing jobs for this contract.</p>
+        <label className={`block w-full text-center py-3 rounded-lg border-2 border-dashed cursor-pointer text-sm font-medium transition-colors ${importing ? 'border-gray-200 text-gray-400' : 'border-blue-300 text-blue-600 hover:bg-blue-50'}`}>
+          {importing ? 'Importing...' : 'Choose JSON file'}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json"
+            onChange={handleImport}
+            disabled={importing}
+            className="hidden"
+          />
+        </label>
+        {importStatus && (
+          <p className={`text-sm mt-2 ${importStatus.ok ? 'text-green-600' : 'text-red-600'}`}>
+            {importStatus.msg}
+          </p>
+        )}
+      </section>
+
       {/* Crew management */}
       <section className="bg-white rounded-xl border shadow-sm p-4">
         <h2 className="font-bold text-sm mb-3">Crew Members</h2>

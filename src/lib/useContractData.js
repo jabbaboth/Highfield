@@ -115,6 +115,27 @@ export function useContractData() {
     return error
   }
 
+  const importJobs = async (jobsArray) => {
+    // Delete existing jobs for this contract first
+    await supabase.from('jobs').delete().eq('contract_id', CONTRACT_ID)
+
+    // Strip fields that don't belong in the jobs table and add contract_id
+    const rows = jobsArray.map(j => {
+      const { assigned_crew, assigned_date, completed, house_no, location, ht, cleanup, ...rest } = j
+      return { ...rest, contract_id: CONTRACT_ID }
+    })
+
+    // Insert in batches of 100
+    const errors = []
+    for (let i = 0; i < rows.length; i += 100) {
+      const batch = rows.slice(i, i + 100)
+      const { error } = await supabase.from('jobs').insert(batch)
+      if (error) errors.push(error)
+    }
+    await fetchJobs()
+    return errors.length ? errors : null
+  }
+
   // Build lookup maps
   const assignmentMap = {}
   assignments.forEach(a => { assignmentMap[a.job_id] = a })
@@ -125,7 +146,7 @@ export function useContractData() {
     jobs, assignments, completions, crews, loading,
     assignmentMap, completionMap,
     assignJobs, unassignJob, completeJob, uncompleteJob,
-    addCrew, removeCrew,
+    addCrew, removeCrew, importJobs,
     refresh: () => Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews()]),
   }
 }
