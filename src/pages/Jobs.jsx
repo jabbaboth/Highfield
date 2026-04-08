@@ -39,10 +39,9 @@ export default function Jobs() {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(new Set())
   const [expanded, setExpanded] = useState(new Set())
-  const [showModal, setShowModal] = useState(false)
-  const [modalCrew, setModalCrew] = useState('')
-  const [modalDate, setModalDate] = useState(() => new Date().toISOString().split('T')[0])
-  const [modalPhase, setModalPhase] = useState('main')
+  const [barCrew, setBarCrew] = useState('')
+  const [barDate, setBarDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [barPhase, setBarPhase] = useState('main')
   const [assigning, setAssigning] = useState(false)
   const [assignError, setAssignError] = useState(null)
 
@@ -78,12 +77,12 @@ export default function Jobs() {
   }
 
   async function handleAssign() {
-    if (!modalCrew || !modalDate) return
+    if (!barCrew || !barDate) return
     setAssigning(true); setAssignError(null)
-    const error = await assignJobs([...selected], modalCrew, modalDate, modalPhase)
+    const error = await assignJobs([...selected], barCrew, barDate, barPhase)
     setAssigning(false)
     if (error) { setAssignError(error.message || 'Failed to assign'); return }
-    setSelected(new Set()); setShowModal(false)
+    setSelected(new Set())
   }
 
   if (loading) return <div className="p-6 text-gray-500">Loading jobs...</div>
@@ -219,51 +218,66 @@ export default function Jobs() {
         {filtered.length === 0 && <p className="text-gray-400 text-center py-8">No jobs match filters</p>}
       </div>
 
-      {/* Selection banner */}
-      {selected.size > 0 && (
-        <div className="sticky bottom-0 text-white p-3 flex items-center justify-between shadow-lg" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-          <span className="font-semibold">{selected.size} job{selected.size > 1 ? 's' : ''} selected</span>
-          <button onClick={() => setShowModal(true)} className="bg-white text-blue-700 hover:bg-blue-50 px-6 py-2 rounded-lg text-sm font-semibold">
-            Assign to Crew
-          </button>
-        </div>
-      )}
+      {/* Floating assignment bar */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300 ease-out"
+        style={{ transform: selected.size > 0 ? 'translateY(0)' : 'translateY(100%)' }}
+      >
+        <div className="bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] px-4 py-3">
+          {assignError && (
+            <p className="text-red-600 text-sm bg-red-50 rounded-lg p-2 mb-2">{assignError}</p>
+          )}
+          {/* Desktop: single row. Mobile: stacked */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            {/* Left: count */}
+            <span className="font-bold text-sm text-gray-900 flex-shrink-0">
+              {selected.size} job{selected.size !== 1 ? 's' : ''} selected
+            </span>
 
-      {/* Assign modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-xl">
-            <h2 className="text-lg font-bold text-gray-900">Assign {selected.size} jobs</h2>
-            <div>
-              <label className="text-sm text-gray-600 block mb-1 font-medium">Phase</label>
-              <select value={modalPhase} onChange={e => setModalPhase(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2">
+            {/* Middle: controls */}
+            <div className="flex flex-col sm:flex-row gap-2 flex-1">
+              <select
+                value={barPhase}
+                onChange={e => setBarPhase(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+              >
                 {PHASES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
               </select>
-            </div>
-            <div>
-              <label className="text-sm text-gray-600 block mb-1 font-medium">Crew</label>
-              <select value={modalCrew} onChange={e => setModalCrew(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2">
+              <select
+                value={barCrew}
+                onChange={e => setBarCrew(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+              >
                 <option value="">Select crew</option>
                 {crews.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
+              <input
+                type="date"
+                value={barDate}
+                onChange={e => setBarDate(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+              />
             </div>
-            <div>
-              <label className="text-sm text-gray-600 block mb-1 font-medium">Date</label>
-              <input type="date" value={modalDate} onChange={e => setModalDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-            </div>
-            {assignError && <p className="text-red-600 text-sm bg-red-50 rounded-lg p-2">{assignError}</p>}
-            <div className="flex gap-2">
-              <button onClick={() => { setShowModal(false); setAssignError(null) }} className="flex-1 py-2 border border-gray-300 hover:border-gray-400 rounded-lg text-sm font-medium">Cancel</button>
+
+            {/* Right: actions */}
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={handleAssign} disabled={!modalCrew || assigning}
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:bg-gray-300"
+                onClick={handleAssign}
+                disabled={!barCrew || assigning}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500 text-white px-6 py-2 rounded-lg text-sm font-semibold transition-colors"
               >
-                {assigning ? 'Assigning...' : 'Assign'}
+                {assigning ? 'Assigning...' : 'Assign to Crew'}
+              </button>
+              <button
+                onClick={() => { setSelected(new Set()); setAssignError(null) }}
+                className="text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                Clear
               </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }
