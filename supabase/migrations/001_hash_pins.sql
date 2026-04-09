@@ -89,7 +89,9 @@ BEGIN
     VALUES (new_token, u.id, u.contract_id, new_expires);
 
   -- Opportunistically sweep old sessions
-  DELETE FROM sessions WHERE expires_at < now() - interval '1 day';
+  -- (qualify the column — verify_pin's RETURNS TABLE declares an `expires_at`
+  -- output variable that would otherwise shadow sessions.expires_at)
+  DELETE FROM sessions s WHERE s.expires_at < now() - interval '1 day';
 
   RETURN QUERY SELECT new_token, u.id, u.name, u.role, new_expires;
 END $$;
