@@ -4,7 +4,12 @@
 -- Run once against the Supabase project (SQL editor).
 -- Safe to re-run: uses IF NOT EXISTS / IF EXISTS guards.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
+-- Make pgcrypto's crypt() / gen_salt() visible in this session for the
+-- inline DO block below. Supabase installs extensions into the `extensions`
+-- schema, not `public`.
+SET search_path = public, extensions;
 
 -- ─── users: hash the PIN + add rate-limit columns ─────────────────────────
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_hash TEXT;
@@ -49,7 +54,7 @@ REVOKE ALL ON sessions FROM anon, authenticated;
 -- zero rows on wrong PIN, raises 'locked' when too many attempts.
 CREATE OR REPLACE FUNCTION verify_pin(p_user_id UUID, p_pin TEXT)
 RETURNS TABLE(token TEXT, user_id UUID, name TEXT, role TEXT, expires_at TIMESTAMPTZ)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE
   u RECORD;
@@ -92,7 +97,7 @@ END $$;
 -- ─── whoami: resolve a session token to a user (or nothing if invalid) ──
 CREATE OR REPLACE FUNCTION whoami(p_token TEXT)
 RETURNS TABLE(user_id UUID, name TEXT, role TEXT, contract_id UUID, expires_at TIMESTAMPTZ)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 BEGIN
   RETURN QUERY
@@ -106,7 +111,7 @@ END $$;
 -- ─── touch_session: idle-timeout refresh, extends expiry by 30 minutes ──
 CREATE OR REPLACE FUNCTION touch_session(p_token TEXT)
 RETURNS TIMESTAMPTZ
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE
   new_expires TIMESTAMPTZ;
@@ -121,7 +126,7 @@ END $$;
 -- ─── logout: delete a session token ──────────────────────────────────────
 CREATE OR REPLACE FUNCTION logout(p_token TEXT)
 RETURNS VOID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 BEGIN
   DELETE FROM sessions WHERE token = p_token;
@@ -134,7 +139,7 @@ END $$;
 
 CREATE OR REPLACE FUNCTION _current_admin(p_token TEXT)
 RETURNS UUID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE uid UUID;
 BEGIN
@@ -152,7 +157,7 @@ END $$;
 
 CREATE OR REPLACE FUNCTION create_user(p_token TEXT, p_name TEXT, p_pin TEXT, p_role TEXT)
 RETURNS UUID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE
   caller_id UUID;
@@ -177,7 +182,7 @@ END $$;
 
 CREATE OR REPLACE FUNCTION update_user_pin(p_token TEXT, p_user_id UUID, p_new_pin TEXT)
 RETURNS VOID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 BEGIN
   PERFORM _current_admin(p_token);
@@ -193,7 +198,7 @@ END $$;
 
 CREATE OR REPLACE FUNCTION update_user_role(p_token TEXT, p_user_id UUID, p_role TEXT)
 RETURNS VOID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 BEGIN
   PERFORM _current_admin(p_token);
@@ -205,7 +210,7 @@ END $$;
 
 CREATE OR REPLACE FUNCTION delete_user(p_token TEXT, p_user_id UUID)
 RETURNS VOID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE caller_id UUID;
 BEGIN
