@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useContractData } from '../lib/useContractData'
-import { FEEDERS, FEEDER_STYLES, feederStyle, PHASES } from '../lib/feeder'
+import { useAuth } from '../lib/useAuth'
+import { FEEDERS, feederStyle, PHASES } from '../lib/feeder'
 
 function getJobPipelineStage(job, assignmentsByJob, completionsByJob) {
   const jid = String(job.job_id)
@@ -28,10 +29,10 @@ const PIPELINE_STAGES = [
 
 export default function Progress() {
   const { jobs, assignmentsByJob, completionsByJob, completeJob, uncompleteJob, loading } = useContractData()
+  const { user } = useAuth()
   const [feederFilter, setFeederFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
 
-  // Pipeline summary counts
   const pipelineCounts = useMemo(() => {
     const counts = {}
     PIPELINE_STAGES.forEach(s => { counts[s.key] = 0 })
@@ -42,7 +43,6 @@ export default function Progress() {
     return counts
   }, [jobs, assignmentsByJob, completionsByJob])
 
-  // Feeder stats using multi-phase completions
   const feederStats = useMemo(() => {
     return FEEDERS.map(f => {
       const fJobs = jobs.filter(j => String(j.feeder) === f)
@@ -55,17 +55,9 @@ export default function Progress() {
       const totalHs = fJobs.reduce((s, j) => s + (parseFloat(j.hs_hrs) || 0), 0)
       const totalEwp = fJobs.reduce((s, j) => s + (parseFloat(j.ewp_hrs) || 0), 0)
       const fs = feederStyle(f)
-      return {
-        feeder: f,
-        style: fs,
-        total: fJobs.length,
-        done: fullyDone.length,
+      return { feeder: f, style: fs, total: fJobs.length, done: fullyDone.length,
         pct: fJobs.length ? Math.round((fullyDone.length / fJobs.length) * 100) : 0,
-        totalSpans,
-        doneSpans,
-        totalHs,
-        totalEwp,
-      }
+        totalSpans, doneSpans, totalHs, totalEwp }
     })
   }, [jobs, completionsByJob])
 
@@ -73,12 +65,11 @@ export default function Progress() {
     let list = [...jobs]
     if (feederFilter) list = list.filter(j => String(j.feeder) === feederFilter)
     if (stageFilter) list = list.filter(j => getJobPipelineStage(j, assignmentsByJob, completionsByJob) === stageFilter)
-
     list.sort((a, b) => {
       const stages = PIPELINE_STAGES.map(s => s.key)
       const sa = stages.indexOf(getJobPipelineStage(a, assignmentsByJob, completionsByJob))
       const sb = stages.indexOf(getJobPipelineStage(b, assignmentsByJob, completionsByJob))
-      if (sa !== sb) return sb - sa // most progressed first
+      if (sa !== sb) return sb - sa
       return String(a.feeder).localeCompare(String(b.feeder))
     })
     return list
@@ -111,11 +102,8 @@ export default function Progress() {
       {/* Feeder summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {feederStats.map(fs => (
-          <div
-            key={fs.feeder}
-            className="rounded-xl shadow-sm p-4"
-            style={{ background: fs.style.bg, borderLeft: `4px solid ${fs.style.border}` }}
-          >
+          <div key={fs.feeder} className="rounded-xl shadow-sm p-4"
+            style={{ background: fs.style.bg, borderLeft: `4px solid ${fs.style.border}` }}>
             <div className="flex items-center gap-2 mb-2">
               <span className="w-3 h-3 rounded-full" style={{ background: fs.style.border }} />
               <span className="font-bold text-sm text-gray-900">Feeder {fs.feeder}</span>
@@ -158,18 +146,14 @@ export default function Progress() {
           const fullyDone = stage === 'complete'
 
           return (
-            <div
-              key={job.job_id}
+            <div key={job.job_id}
               className={`flex items-center gap-3 p-2.5 rounded-lg border ${fullyDone ? 'opacity-60' : ''}`}
-              style={{ background: fullyDone ? '#d4edda' : '#fff', borderLeft: `3px solid ${fs.border}` }}
-            >
+              style={{ background: fullyDone ? '#d4edda' : '#fff', borderLeft: `3px solid ${fs.border}` }}>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-sm font-medium text-gray-900 truncate">{job.full_address}</p>
-                  <span
-                    className="px-1.5 py-0.5 rounded text-[10px] font-bold"
-                    style={{ background: stageInfo.bg, color: stageInfo.color }}
-                  >
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                    style={{ background: stageInfo.bg, color: stageInfo.color }}>
                     {stageInfo.label}
                   </span>
                 </div>
@@ -182,29 +166,35 @@ export default function Progress() {
                     return (
                       <span key={ph} className={`px-1.5 py-0.5 rounded ${comp ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                         {phLabel}: {asg?.crew_name} {comp && '✓'}
+                        {comp?.completed_by_name && (
+                          <span className="text-green-600"> by {comp.completed_by_name}</span>
+                        )}
+                        {comp?.completed_at && (
+                          <span className="text-gray-400"> · {new Date(comp.completed_at).toLocaleDateString()}</span>
+                        )}
                       </span>
                     )
                   })}
                   {!a.main && !c.main && <span className="text-gray-400">Unplanned</span>}
                 </div>
               </div>
-              {/* Phase complete/uncomplete buttons */}
               <div className="flex gap-1 flex-shrink-0">
                 {PHASES.map(p => {
                   const comp = c[p.key]
                   const asg = a[p.key]
                   if (!asg && !comp) return null
                   return (
-                    <button
-                      key={p.key}
-                      onClick={() => comp ? uncompleteJob(job.job_id, p.key) : completeJob(job.job_id, p.key)}
+                    <button key={p.key}
+                      onClick={() => comp
+                        ? uncompleteJob(job.job_id, p.key)
+                        : completeJob(job.job_id, p.key, user?.id, user?.name)
+                      }
                       className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-bold ${
                         comp
                           ? 'bg-green-500 border-green-500 text-white'
                           : 'border-gray-300 text-gray-400 hover:border-green-400 hover:text-green-500'
                       }`}
-                      title={`${comp ? 'Uncomplete' : 'Complete'} ${p.label}`}
-                    >
+                      title={`${comp ? 'Uncomplete' : 'Complete'} ${p.label}`}>
                       {p.key === 'main' ? 'H' : p.key === 'bucket' ? 'E' : 'C'}
                     </button>
                   )

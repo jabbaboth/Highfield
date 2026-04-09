@@ -1,5 +1,5 @@
-import { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider, useAuth } from './lib/useAuth'
 import PinScreen from './components/PinScreen'
 import Layout from './components/Layout'
 import { ContractDataProvider } from './lib/useContractData'
@@ -8,24 +8,51 @@ import Planner from './pages/Planner'
 import Progress from './pages/Progress'
 import Settings from './pages/Settings'
 
-export default function App() {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem('hf_authed') === 'true')
-
-  if (!authed) {
-    return <PinScreen onSuccess={() => { sessionStorage.setItem('hf_authed', 'true'); setAuthed(true) }} />
+function RoleRoute({ children, allowed }) {
+  const { user } = useAuth()
+  const role = user?.role || 'crew'
+  if (!allowed.includes(role)) {
+    return <Navigate to="/planner" replace />
   }
+  return children
+}
+
+function AuthedApp() {
+  const { user } = useAuth()
+  const role = user?.role || 'crew'
+  const defaultRoute = role === 'crew' ? '/planner' : '/jobs'
 
   return (
     <ContractDataProvider>
       <Layout>
         <Routes>
-          <Route path="/jobs" element={<Jobs />} />
+          <Route path="/jobs" element={
+            <RoleRoute allowed={['admin', 'foreman']}><Jobs /></RoleRoute>
+          } />
           <Route path="/planner" element={<Planner />} />
-          <Route path="/progress" element={<Progress />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/jobs" replace />} />
+          <Route path="/progress" element={
+            <RoleRoute allowed={['admin', 'foreman']}><Progress /></RoleRoute>
+          } />
+          <Route path="/settings" element={
+            <RoleRoute allowed={['admin']}><Settings /></RoleRoute>
+          } />
+          <Route path="*" element={<Navigate to={defaultRoute} replace />} />
         </Routes>
       </Layout>
     </ContractDataProvider>
   )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
+  )
+}
+
+function AppInner() {
+  const { user } = useAuth()
+  if (!user) return <PinScreen />
+  return <AuthedApp />
 }

@@ -59,13 +59,14 @@ function useContractDataInternal() {
   useRealtimeTable('completions', fetchCompletions)
 
   // Multi-phase assign: phase = 'main' | 'bucket' | 'chip'
-  const assignJobs = async (jobIds, crewName, plannedDate, phase = 'main') => {
+  const assignJobs = async (jobIds, crewName, plannedDate, phase = 'main', assignedByName = '') => {
     const rows = jobIds.map(job_id => ({
       contract_id: CONTRACT_ID,
       job_id: Number(job_id),
       crew_name: crewName,
       planned_date: plannedDate,
       phase,
+      assigned_by_name: assignedByName,
     }))
     const { error } = await supabase
       .from('assignments')
@@ -88,17 +89,19 @@ function useContractDataInternal() {
     return error
   }
 
-  const completeJob = async (jobId, phase = 'main', completedBy = '', notes = '') => {
+  const completeJob = async (jobId, phase = 'main', completedByUserId = null, completedByName = '', notes = '') => {
+    const row = {
+      contract_id: CONTRACT_ID,
+      job_id: Number(jobId),
+      phase,
+      completed_at: new Date().toISOString(),
+      notes,
+    }
+    if (completedByUserId) row.completed_by_user_id = completedByUserId
+    if (completedByName) row.completed_by_name = completedByName
     const { error } = await supabase
       .from('completions')
-      .upsert({
-        contract_id: CONTRACT_ID,
-        job_id: Number(jobId),
-        phase,
-        completed_at: new Date().toISOString(),
-        completed_by: completedBy,
-        notes,
-      }, { onConflict: 'contract_id,job_id,phase' })
+      .upsert(row, { onConflict: 'contract_id,job_id,phase' })
     if (error) console.error('completeJob:', error)
     else await fetchCompletions()
     return error

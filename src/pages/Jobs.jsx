@@ -1,20 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useContractData } from '../lib/useContractData'
+import { useAuth } from '../lib/useAuth'
 import { FEEDERS, feederStyle, PHASES } from '../lib/feeder'
-
-function PhasePill({ label, status }) {
-  const colors = {
-    locked: 'bg-gray-100 text-gray-400',
-    'not started': 'bg-gray-100 text-gray-500',
-    assigned: 'bg-blue-100 text-blue-700',
-    complete: 'bg-green-100 text-green-700',
-  }
-  return (
-    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${colors[status] || colors.locked}`}>
-      {label}: {status}
-    </span>
-  )
-}
 
 function getJobPhaseStatus(job, assignmentsByJob, completionsByJob) {
   const jid = String(job.job_id)
@@ -30,8 +17,23 @@ function getJobPhaseStatus(job, assignmentsByJob, completionsByJob) {
   return { main: mainStatus, bucket: bucketStatus, chip: chipStatus }
 }
 
+function PhasePill({ label, status }) {
+  const colors = {
+    locked: 'bg-gray-100 text-gray-400',
+    'not started': 'bg-gray-100 text-gray-600',
+    assigned: 'bg-blue-100 text-blue-700',
+    complete: 'bg-green-100 text-green-700',
+  }
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${colors[status] || colors.locked}`}>
+      {label}: {status}
+    </span>
+  )
+}
+
 export default function Jobs() {
   const { jobs, assignmentsByJob, completionsByJob, crews, assignJobs, unassignJob, loading } = useContractData()
+  const { user } = useAuth()
   const [feederFilter, setFeederFilter] = useState('')
   const [streetFilter, setStreetFilter] = useState('')
   const [ewpFilter, setEwpFilter] = useState('')
@@ -79,7 +81,7 @@ export default function Jobs() {
   async function handleAssign() {
     if (!barCrew || !barDate) return
     setAssigning(true); setAssignError(null)
-    const error = await assignJobs([...selected], barCrew, barDate, barPhase)
+    const error = await assignJobs([...selected], barCrew, barDate, barPhase, user?.name || '')
     setAssigning(false)
     if (error) { setAssignError(error.message || 'Failed to assign'); return }
     setSelected(new Set())
@@ -118,103 +120,158 @@ export default function Jobs() {
         />
       </div>
 
-      {/* Job list */}
-      <div className="flex-1 overflow-auto p-3 space-y-2">
-        {filtered.map(job => {
-          const jid = String(job.job_id)
-          const assignments = assignmentsByJob[jid] || {}
-          const completionsForJob = completionsByJob[jid] || {}
-          const phases = getJobPhaseStatus(job, assignmentsByJob, completionsByJob)
-          const allDone = phases.main === 'complete' && phases.bucket === 'complete' && phases.chip === 'complete'
-          const isExpanded = expanded.has(job.job_id)
-          const isSelected = selected.has(job.job_id)
-          const fs = feederStyle(job.feeder)
+      {/* Card grid */}
+      <div className="flex-1 overflow-auto p-3" style={{ paddingBottom: selected.size > 0 ? '100px' : '12px' }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          {filtered.map(job => {
+            const jid = String(job.job_id)
+            const asgns = assignmentsByJob[jid] || {}
+            const comps = completionsByJob[jid] || {}
+            const phases = getJobPhaseStatus(job, assignmentsByJob, completionsByJob)
+            const allDone = phases.main === 'complete' && (phases.bucket === 'complete' || phases.bucket === 'locked') && (phases.chip === 'complete' || phases.chip === 'locked')
+            const isExpanded = expanded.has(job.job_id)
+            const isSelected = selected.has(job.job_id)
+            const fs = feederStyle(job.feeder)
 
-          return (
-            <div
-              key={job.job_id}
-              className="rounded-lg shadow-sm hover:shadow-md transition-all cursor-pointer"
-              style={{
-                background: allDone ? '#d4edda' : fs.bg,
-                borderLeft: `4px solid ${fs.border}`,
-                opacity: allDone ? 0.75 : 1,
-                transform: 'translateY(0)',
-              }}
-              onMouseEnter={e => { if (!allDone) e.currentTarget.style.transform = 'translateY(-1px)' }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)' }}
-            >
-              <div className="flex items-start gap-3 p-3">
-                <input
-                  type="checkbox" checked={isSelected}
-                  onChange={() => toggleSelect(job.job_id)}
-                  className="mt-1 w-5 h-5 rounded flex-shrink-0"
-                />
-                <div className="flex-1 min-w-0" onClick={() => toggleExpand(job.job_id)}>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 rounded text-xs font-bold text-white" style={{ background: fs.border }}>
-                      {job.feeder}
-                    </span>
-                    {allDone && <span className="text-green-700 font-bold text-sm">✓ Done</span>}
-                    <span className="font-semibold text-sm text-gray-900 truncate">{job.full_address}</span>
-                  </div>
+            return (
+              <div
+                key={job.job_id}
+                className="rounded-lg shadow-sm hover:shadow-md flex flex-col"
+                style={{
+                  background: allDone ? '#d4edda' : fs.bg,
+                  borderLeft: `4px solid ${fs.border}`,
+                  opacity: allDone ? 0.75 : 1,
+                  transition: 'transform 0.15s, box-shadow 0.15s',
+                }}
+                onMouseEnter={e => { if (!allDone) e.currentTarget.style.transform = 'translateY(-2px)' }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)' }}
+              >
+                {/* Card top: address + ref + checkbox */}
+                <div className="p-3 flex items-start gap-2">
+                  <input
+                    type="checkbox" checked={isSelected}
+                    onChange={() => toggleSelect(job.job_id)}
+                    className="mt-1 w-5 h-5 rounded flex-shrink-0"
+                    onClick={e => e.stopPropagation()}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-bold text-gray-900" style={{ fontSize: '15px', lineHeight: '1.3' }}>
+                        {job.full_address}
+                      </p>
+                      <span className="text-xs text-gray-400 font-mono flex-shrink-0">#{job.job_id}</span>
+                    </div>
 
-                  {/* Phase pills */}
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    <PhasePill label="H&S" status={phases.main} />
-                    <PhasePill label="EWP" status={phases.bucket} />
-                    <PhasePill label="Chip" status={phases.chip} />
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-500">
-                    {job.species && <span>{job.species}</span>}
-                    {job.spans != null && <span>Spans: {job.spans}</span>}
-                    {job.hs_hrs != null && <span>H&S: {job.hs_hrs}h</span>}
-                    {job.ewp_hrs != null && <span>EWP: {job.ewp_hrs}h</span>}
-                    {job.cleanup_hrs != null && <span>Chip: {job.cleanup_hrs}h</span>}
-                    {job.ewp_type && <span className="bg-blue-100 text-blue-700 px-1.5 rounded">{job.ewp_type}</span>}
-                    {job.tm_type && <span className="bg-amber-100 text-amber-700 px-1.5 rounded">TM: {job.tm_type}</span>}
-                  </div>
-
-                  {/* Show assignments per phase */}
-                  {['main', 'bucket', 'chip'].map(ph => {
-                    const asg = assignments[ph]
-                    if (!asg) return null
-                    const phLabel = ph === 'main' ? 'H&S' : ph === 'bucket' ? 'EWP' : 'Chip'
-                    const comp = completionsForJob[ph]
-                    return (
-                      <div key={ph} className="flex items-center gap-2 mt-1">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${comp ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                          {phLabel}: {asg.crew_name} · {asg.planned_date} {comp && '✓'}
+                    {/* Tag badges */}
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      <span className="px-2 py-0.5 rounded text-xs font-bold text-white" style={{ background: fs.border }}>
+                        {fs.label}
+                      </span>
+                      {job.ewp_type && (
+                        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-700">
+                          {job.ewp_type}
                         </span>
-                        {!comp && (
-                          <button
-                            onClick={e => { e.stopPropagation(); unassignJob(job.job_id, ph) }}
-                            className="text-red-500 hover:text-red-700 text-xs font-medium"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
+                      )}
+                      {job.species && (
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                          {job.species}
+                        </span>
+                      )}
+                      {job.tm_type && (
+                        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-pink-100 text-pink-700">
+                          TM: {job.tm_type}
+                        </span>
+                      )}
+                      {allDone && (
+                        <span className="px-2 py-0.5 rounded text-xs font-bold bg-green-200 text-green-800">
+                          ✓ Done
+                        </span>
+                      )}
+                    </div>
 
-              {isExpanded && (
-                <div className="px-3 pb-3 pt-0 border-t border-gray-200/50 text-xs text-gray-600 space-y-1 ml-8">
-                  {job.pole_no && <p><strong>Pole:</strong> {job.pole_no}</p>}
-                  {job.comments && <p><strong>Comments:</strong> {job.comments}</p>}
-                  {job.ok_lett && <p><strong>OK Letter:</strong> {job.ok_lett}</p>}
-                  {job.owner && <p><strong>Owner:</strong> {job.owner}</p>}
-                  {job.phone && <p><strong>Phone:</strong> {job.phone}</p>}
-                  {job.notify && <p><strong>Notify:</strong> {job.notify}</p>}
-                  {job.additional && <p><strong>Additional:</strong> {job.additional}</p>}
-                  {job.road_level && <p><strong>Road Level:</strong> {job.road_level}</p>}
+                    {/* Metrics row */}
+                    <div className="grid grid-cols-4 gap-1 mt-2">
+                      {job.spans != null && (
+                        <div className="text-center">
+                          <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">Spans</div>
+                          <div className="text-sm font-bold text-gray-800">{job.spans}</div>
+                        </div>
+                      )}
+                      {job.hs_hrs != null && (
+                        <div className="text-center">
+                          <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">H&S</div>
+                          <div className="text-sm font-bold text-gray-800">{job.hs_hrs}h</div>
+                        </div>
+                      )}
+                      {job.ewp_hrs != null && (
+                        <div className="text-center">
+                          <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">EWP</div>
+                          <div className="text-sm font-bold text-gray-800">{job.ewp_hrs}h</div>
+                        </div>
+                      )}
+                      {job.cleanup_hrs != null && (
+                        <div className="text-center">
+                          <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">Cleanup</div>
+                          <div className="text-sm font-bold text-gray-800">{job.cleanup_hrs}h</div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Phase pills */}
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      <PhasePill label="H&S" status={phases.main} />
+                      <PhasePill label="EWP" status={phases.bucket} />
+                      <PhasePill label="Chip" status={phases.chip} />
+                    </div>
+
+                    {/* Crew assignment badges */}
+                    {['main', 'bucket', 'chip'].map(ph => {
+                      const asg = asgns[ph]
+                      if (!asg) return null
+                      const phLabel = ph === 'main' ? 'H&S' : ph === 'bucket' ? 'EWP' : 'Chip'
+                      const comp = comps[ph]
+                      return (
+                        <div key={ph} className="flex items-center gap-1.5 mt-1">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${comp ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-700'}`}>
+                            {phLabel}: {asg.crew_name} · {asg.planned_date} {comp && '✓'}
+                          </span>
+                          {!comp && (
+                            <button
+                              onClick={e => { e.stopPropagation(); unassignJob(job.job_id, ph) }}
+                              className="text-red-400 hover:text-red-600 text-xs"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-              )}
-            </div>
-          )
-        })}
+
+                {/* Expand toggle */}
+                <button
+                  onClick={() => toggleExpand(job.job_id)}
+                  className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-600 font-medium border-t border-gray-100 text-center transition-colors"
+                >
+                  {isExpanded ? '▲ LESS DETAIL' : '▼ MORE DETAIL'}
+                </button>
+
+                {isExpanded && (
+                  <div className="px-3 pb-3 text-xs text-gray-500 space-y-1 italic border-t border-gray-100 pt-2">
+                    {job.pole_no && <p><strong className="not-italic text-gray-600">Pole:</strong> {job.pole_no}</p>}
+                    {job.comments && <p><strong className="not-italic text-gray-600">Comments:</strong> {job.comments}</p>}
+                    {job.ok_lett && <p><strong className="not-italic text-gray-600">OK Letter:</strong> {job.ok_lett}</p>}
+                    {job.owner && <p><strong className="not-italic text-gray-600">Owner:</strong> {job.owner} {job.phone && `· ${job.phone}`}</p>}
+                    {job.notify && <p><strong className="not-italic text-gray-600">Notify:</strong> {job.notify}</p>}
+                    {job.additional && <p><strong className="not-italic text-gray-600">Additional:</strong> {job.additional}</p>}
+                    {job.road_level && <p><strong className="not-italic text-gray-600">Road Level:</strong> {job.road_level}</p>}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
         {filtered.length === 0 && <p className="text-gray-400 text-center py-8">No jobs match filters</p>}
       </div>
 
@@ -227,39 +284,20 @@ export default function Jobs() {
           {assignError && (
             <p className="text-red-600 text-sm bg-red-50 rounded-lg p-2 mb-2">{assignError}</p>
           )}
-          {/* Desktop: single row. Mobile: stacked */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-            {/* Left: count */}
             <span className="font-bold text-sm text-gray-900 flex-shrink-0">
               {selected.size} job{selected.size !== 1 ? 's' : ''} selected
             </span>
-
-            {/* Middle: controls */}
             <div className="flex flex-col sm:flex-row gap-2 flex-1">
-              <select
-                value={barPhase}
-                onChange={e => setBarPhase(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-              >
+              <select value={barPhase} onChange={e => setBarPhase(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
                 {PHASES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
               </select>
-              <select
-                value={barCrew}
-                onChange={e => setBarCrew(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-              >
+              <select value={barCrew} onChange={e => setBarCrew(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
                 <option value="">Select crew</option>
                 {crews.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
-              <input
-                type="date"
-                value={barDate}
-                onChange={e => setBarDate(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-              />
+              <input type="date" value={barDate} onChange={e => setBarDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
             </div>
-
-            {/* Right: actions */}
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 onClick={handleAssign}

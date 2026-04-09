@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useContractData } from '../lib/useContractData'
+import { useAuth } from '../lib/useAuth'
 import { feederStyle, PHASES, crewColor } from '../lib/feeder'
 
 function formatDate(d) {
@@ -8,12 +9,32 @@ function formatDate(d) {
 
 export default function Planner() {
   const { jobs, assignments, assignmentsByJob, completionsByJob, crews, assignJobs, unassignJob, completeJob, loading } = useContractData()
+  const { user } = useAuth()
+  const role = user?.role || 'crew'
   const [date, setDate] = useState(() => formatDate(new Date()))
   const [selectedUnplanned, setSelectedUnplanned] = useState(new Set())
   const [assignCrew, setAssignCrew] = useState('')
   const [activePhase, setActivePhase] = useState('main')
 
   const phaseInfo = PHASES.find(p => p.key === activePhase) || PHASES[0]
+
+  // Crew role: find which crew this user belongs to
+  const userCrewName = useMemo(() => {
+    if (role !== 'crew') return null
+    // Match user name to a crew name (case-insensitive partial match)
+    const match = crews.find(c => c.name.toLowerCase().includes(user?.name?.toLowerCase()))
+    return match?.name || null
+  }, [role, crews, user])
+
+  // Crew role only sees their crew
+  const visibleCrews = useMemo(() => {
+    if (role === 'crew' && userCrewName) {
+      return crews.filter(c => c.name === userCrewName)
+    }
+    return crews
+  }, [role, userCrewName, crews])
+
+  const canAssign = role === 'admin' || role === 'foreman'
 
   function prevDay() {
     const d = new Date(date + 'T00:00:00')
@@ -33,24 +54,22 @@ export default function Planner() {
     return m
   }, [jobs])
 
-  // Filter assignments for this date AND the active phase
   const dayAssignments = useMemo(() => {
     return assignments.filter(a => a.planned_date === date && (a.phase || 'main') === activePhase)
   }, [assignments, date, activePhase])
 
   const crewJobs = useMemo(() => {
     const map = {}
-    crews.forEach(c => { map[c.name] = [] })
+    visibleCrews.forEach(c => { map[c.name] = [] })
     dayAssignments.forEach(a => {
       const job = jobMap[a.job_id]
-      if (job && map[a.crew_name]) {
+      if (job && map[a.crew_name] !== undefined) {
         map[a.crew_name].push({ ...job, assignment: a })
       }
     })
     return map
-  }, [crews, dayAssignments, jobMap])
+  }, [visibleCrews, dayAssignments, jobMap])
 
-  // Unplanned = no assignment for the active phase AND not completed for that phase
   const unplanned = useMemo(() => {
     return jobs.filter(j => {
       const jid = String(j.job_id)
@@ -70,7 +89,7 @@ export default function Planner() {
 
   async function handleQuickAssign() {
     if (!assignCrew || selectedUnplanned.size === 0) return
-    await assignJobs([...selectedUnplanned], assignCrew, date, activePhase)
+    await assignJobs([...selectedUnplanned], assignCrew, date, activePhase, user?.name || '')
     setSelectedUnplanned(new Set())
   }
 
@@ -118,21 +137,18 @@ export default function Planner() {
 
       {/* Crew columns */}
       <div className="flex-1 overflow-auto p-3">
-        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(crews.length, 1)}, minmax(220px, 1fr))` }}>
-          {crews.map(crew => {
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(visibleCrews.length, 1)}, minmax(220px, 1fr))` }}>
+          {visibleCrews.map(crew => {
             const stats = getCrewStats(crew.name)
             const jobList = crewJobs[crew.name] || []
-            const color = crewColor(crews, crew.name)
 
             return (
               <div key={crew.name} className="rounded-xl border shadow-sm overflow-hidden" style={{ background: '#fff' }}>
-                {/* Crew header with gradient */}
                 <div className="p-3" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
                   <h3 className="font-bold text-sm text-white">{crew.name}</h3>
                   <div className="text-xs text-blue-100 mt-0.5">
                     {stats.count} jobs · {stats.totalSpans} spans · {stats.totalHrs.toFixed(1)}h
                   </div>
-                  {/* Hour budget bar */}
                   <div className="mt-2 h-2 bg-white/20 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
@@ -169,20 +185,22 @@ export default function Planner() {
                           <div className="flex gap-1">
                             {!comp && (
                               <button
-                                onClick={() => completeJob(job.job_id, activePhase)}
+                                onClick={() => completeJob(job.job_id, activePhase, user?.id, user?.name)}
                                 className="w-7 h-7 rounded-full border-2 border-green-400 text-green-500 hover:bg-green-50 flex items-center justify-center text-xs"
                                 title="Mark complete"
                               >
                                 ✓
                               </button>
                             )}
-                            <button
-                              onClick={() => unassignJob(job.job_id, activePhase)}
-                              className="w-7 h-7 rounded-full border-2 border-red-300 text-red-400 hover:bg-red-50 flex items-center justify-center text-xs"
-                              title="Unassign"
-                            >
-                              ×
-                            </button>
+                            {canAssign && (
+                              <button
+                                onClick={() => unassignJob(job.job_id, activePhase)}
+                                className="w-7 h-7 rounded-full border-2 border-red-300 text-red-400 hover:bg-red-50 flex items-center justify-center text-xs"
+                                title="Unassign"
+                              >
+                                ×
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -194,41 +212,43 @@ export default function Planner() {
           })}
         </div>
 
-        {/* Unplanned jobs for this phase */}
-        <div className="mt-6">
-          <h3 className="font-bold text-sm text-gray-700 mb-2">
-            Unplanned {phaseInfo.label} Jobs ({unplanned.length})
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {unplanned.slice(0, 50).map(job => {
-              const fs = feederStyle(job.feeder)
-              return (
-                <div
-                  key={job.job_id}
-                  onClick={() => toggleUnplanned(job.job_id)}
-                  className={`p-2.5 rounded-lg border cursor-pointer text-sm transition-colors ${
-                    selectedUnplanned.has(job.job_id)
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'bg-white hover:border-gray-300'
-                  }`}
-                  style={{ borderLeft: `3px solid ${fs.border}` }}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-xs font-medium">{job.full_address}</span>
+        {/* Unplanned jobs — only for admin/foreman */}
+        {canAssign && (
+          <div className="mt-6">
+            <h3 className="font-bold text-sm text-gray-700 mb-2">
+              Unplanned {phaseInfo.label} Jobs ({unplanned.length})
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {unplanned.slice(0, 50).map(job => {
+                const fs = feederStyle(job.feeder)
+                return (
+                  <div
+                    key={job.job_id}
+                    onClick={() => toggleUnplanned(job.job_id)}
+                    className={`p-2.5 rounded-lg border cursor-pointer text-sm transition-colors ${
+                      selectedUnplanned.has(job.job_id)
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'bg-white hover:border-gray-300'
+                    }`}
+                    style={{ borderLeft: `3px solid ${fs.border}` }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-xs font-medium">{job.full_address}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {job.spans && `${job.spans} spans`} {job[phaseInfo.hrsField] && `· ${job[phaseInfo.hrsField]}h`}
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {job.spans && `${job.spans} spans`} {job[phaseInfo.hrsField] && `· ${job[phaseInfo.hrsField]}h`}
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
+            {unplanned.length > 50 && <p className="text-xs text-gray-400 mt-2">Showing 50 of {unplanned.length}</p>}
           </div>
-          {unplanned.length > 50 && <p className="text-xs text-gray-400 mt-2">Showing 50 of {unplanned.length}</p>}
-        </div>
+        )}
       </div>
 
-      {/* Quick assign banner */}
-      {selectedUnplanned.size > 0 && (
+      {/* Quick assign banner — only for admin/foreman */}
+      {canAssign && selectedUnplanned.size > 0 && (
         <div className="sticky bottom-0 text-white p-3 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
           <span className="text-sm font-medium flex-shrink-0">Assign {selectedUnplanned.size} ({phaseInfo.label}) to {date}:</span>
           <select value={assignCrew} onChange={e => setAssignCrew(e.target.value)} className="bg-white/10 border border-white/30 rounded-lg px-2 py-1.5 text-sm text-white flex-1">
