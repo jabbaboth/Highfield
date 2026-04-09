@@ -7,25 +7,25 @@ function getJobPhaseStatus(job, assignmentsByJob, completionsByJob) {
   const jid = String(job.job_id)
   const a = assignmentsByJob[jid] || {}
   const c = completionsByJob[jid] || {}
-
   const mainStatus = c.main ? 'complete' : a.main ? 'assigned' : 'not started'
   const bucketUnlocked = !!c.main
   const bucketStatus = c.bucket ? 'complete' : a.bucket ? 'assigned' : bucketUnlocked ? 'not started' : 'locked'
   const chipUnlocked = c.bucket ? true : (c.main && !job.ewp_hrs)
   const chipStatus = c.chip ? 'complete' : a.chip ? 'assigned' : chipUnlocked ? 'not started' : 'locked'
-
   return { main: mainStatus, bucket: bucketStatus, chip: chipStatus }
 }
 
+const pillColors = {
+  locked: { bg: '#f5f5f7', color: '#aeaeb2' },
+  'not started': { bg: '#f5f5f7', color: '#6e6e73' },
+  assigned: { bg: '#e8f4fd', color: '#0071e3' },
+  complete: { bg: '#e8f8ed', color: '#34c759' },
+}
+
 function PhasePill({ label, status }) {
-  const colors = {
-    locked: 'bg-gray-100 text-gray-400',
-    'not started': 'bg-gray-100 text-gray-600',
-    assigned: 'bg-blue-100 text-blue-700',
-    complete: 'bg-green-100 text-green-700',
-  }
+  const c = pillColors[status] || pillColors.locked
   return (
-    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${colors[status] || colors.locked}`}>
+    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: c.bg, color: c.color }}>
       {label}: {status}
     </span>
   )
@@ -87,42 +87,40 @@ export default function Jobs() {
     setSelected(new Set())
   }
 
-  if (loading) return <div className="p-6 text-gray-500">Loading jobs...</div>
+  if (loading) return <div style={{ padding: 24, color: 'var(--apple-secondary)' }}>Loading jobs...</div>
 
   return (
     <div className="flex flex-col h-full">
       {/* Filters */}
-      <div className="p-3 bg-white border-b border-gray-200 shadow-sm space-y-2">
-        <div className="flex flex-wrap gap-2">
-          <select value={feederFilter} onChange={e => setFeederFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">All Feeders</option>
-            {FEEDERS.map(f => <option key={f} value={f}>Feeder {f}</option>)}
-          </select>
-          <select value={streetFilter} onChange={e => setStreetFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">All Streets</option>
-            {streets.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={ewpFilter} onChange={e => setEwpFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">All EWP</option>
-            {ewpTypes.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">All Status</option>
-            <option>Unplanned</option>
-            <option>Planned</option>
-            <option>Complete</option>
-          </select>
-        </div>
+      <div className="flex flex-wrap gap-2 p-4" style={{ borderBottom: '1px solid var(--apple-separator)' }}>
+        <select value={feederFilter} onChange={e => setFeederFilter(e.target.value)}>
+          <option value="">All Feeders</option>
+          {FEEDERS.map(f => <option key={f} value={f}>Feeder {f}</option>)}
+        </select>
+        <select value={streetFilter} onChange={e => setStreetFilter(e.target.value)}>
+          <option value="">All Streets</option>
+          {streets.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={ewpFilter} onChange={e => setEwpFilter(e.target.value)}>
+          <option value="">All EWP</option>
+          {ewpTypes.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="">All Status</option>
+          <option>Unplanned</option>
+          <option>Planned</option>
+          <option>Complete</option>
+        </select>
         <input
           type="text" placeholder="Search address, species, ref..."
           value={search} onChange={e => setSearch(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          style={{ flex: 1, minWidth: 180 }}
         />
       </div>
 
       {/* Card grid */}
-      <div className="flex-1 overflow-auto p-3" style={{ paddingBottom: selected.size > 0 ? '100px' : '12px' }}>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="flex-1 overflow-auto p-4" style={{ paddingBottom: selected.size > 0 ? 110 : 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
           {filtered.map(job => {
             const jid = String(job.job_id)
             const asgns = assignmentsByJob[jid] || {}
@@ -136,179 +134,218 @@ export default function Jobs() {
             return (
               <div
                 key={job.job_id}
-                className="rounded-lg shadow-sm hover:shadow-md flex flex-col"
                 style={{
-                  background: allDone ? '#d4edda' : fs.bg,
-                  borderLeft: `4px solid ${fs.border}`,
-                  opacity: allDone ? 0.75 : 1,
-                  transition: 'transform 0.15s, box-shadow 0.15s',
+                  background: allDone ? '#f0faf2' : 'white',
+                  borderRadius: 'var(--apple-radius)',
+                  boxShadow: 'var(--apple-shadow)',
+                  borderTop: `3px solid ${fs.border}`,
+                  opacity: allDone ? 0.8 : 1,
+                  transition: 'var(--apple-transition)',
+                  cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column',
                 }}
-                onMouseEnter={e => { if (!allDone) e.currentTarget.style.transform = 'translateY(-2px)' }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)' }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--apple-shadow-hover)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--apple-shadow)'; e.currentTarget.style.transform = 'translateY(0)' }}
               >
-                {/* Card top: address + ref + checkbox */}
-                <div className="p-3 flex items-start gap-2">
-                  <input
-                    type="checkbox" checked={isSelected}
-                    onChange={() => toggleSelect(job.job_id)}
-                    className="mt-1 w-5 h-5 rounded flex-shrink-0"
-                    onClick={e => e.stopPropagation()}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-bold text-gray-900" style={{ fontSize: '15px', lineHeight: '1.3' }}>
-                        {job.full_address}
-                      </p>
-                      <span className="text-xs text-gray-400 font-mono flex-shrink-0">#{job.job_id}</span>
-                    </div>
-
-                    {/* Tag badges */}
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      <span className="px-2 py-0.5 rounded text-xs font-bold text-white" style={{ background: fs.border }}>
-                        {fs.label}
-                      </span>
-                      {job.ewp_type && (
-                        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-700">
-                          {job.ewp_type}
+                <div style={{ padding: 16 }}>
+                  {/* Top row: address + ref + checkbox */}
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox" checked={isSelected}
+                      onChange={() => toggleSelect(job.job_id)}
+                      onClick={e => e.stopPropagation()}
+                      style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--apple-text)', letterSpacing: '-0.01em', lineHeight: 1.3 }}>
+                          {job.full_address}
+                        </p>
+                        <span style={{ fontSize: 11, color: 'var(--apple-tertiary)', fontFamily: 'monospace', flexShrink: 0 }}>
+                          #{job.job_id}
                         </span>
-                      )}
-                      {job.species && (
-                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                          {job.species}
-                        </span>
-                      )}
-                      {job.tm_type && (
-                        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-pink-100 text-pink-700">
-                          TM: {job.tm_type}
-                        </span>
-                      )}
-                      {allDone && (
-                        <span className="px-2 py-0.5 rounded text-xs font-bold bg-green-200 text-green-800">
-                          ✓ Done
-                        </span>
-                      )}
-                    </div>
+                      </div>
 
-                    {/* Metrics row */}
-                    <div className="grid grid-cols-4 gap-1 mt-2">
-                      {job.spans != null && (
-                        <div className="text-center">
-                          <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">Spans</div>
-                          <div className="text-sm font-bold text-gray-800">{job.spans}</div>
-                        </div>
-                      )}
-                      {job.hs_hrs != null && (
-                        <div className="text-center">
-                          <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">H&S</div>
-                          <div className="text-sm font-bold text-gray-800">{job.hs_hrs}h</div>
-                        </div>
-                      )}
-                      {job.ewp_hrs != null && (
-                        <div className="text-center">
-                          <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">EWP</div>
-                          <div className="text-sm font-bold text-gray-800">{job.ewp_hrs}h</div>
-                        </div>
-                      )}
-                      {job.cleanup_hrs != null && (
-                        <div className="text-center">
-                          <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">Cleanup</div>
-                          <div className="text-sm font-bold text-gray-800">{job.cleanup_hrs}h</div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Phase pills */}
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      <PhasePill label="H&S" status={phases.main} />
-                      <PhasePill label="EWP" status={phases.bucket} />
-                      <PhasePill label="Chip" status={phases.chip} />
-                    </div>
-
-                    {/* Crew assignment badges */}
-                    {['main', 'bucket', 'chip'].map(ph => {
-                      const asg = asgns[ph]
-                      if (!asg) return null
-                      const phLabel = ph === 'main' ? 'H&S' : ph === 'bucket' ? 'EWP' : 'Chip'
-                      const comp = comps[ph]
-                      return (
-                        <div key={ph} className="flex items-center gap-1.5 mt-1">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${comp ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-700'}`}>
-                            {phLabel}: {asg.crew_name} · {asg.planned_date} {comp && '✓'}
+                      {/* Badges */}
+                      <div className="flex flex-wrap gap-1" style={{ marginTop: 8 }}>
+                        <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: fs.border + '20', color: fs.border }}>
+                          {fs.label}
+                        </span>
+                        {job.ewp_type && (
+                          <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: '#fff3e0', color: '#e65100' }}>
+                            {job.ewp_type}
                           </span>
-                          {!comp && (
-                            <button
-                              onClick={e => { e.stopPropagation(); unassignJob(job.job_id, ph) }}
-                              className="text-red-400 hover:text-red-600 text-xs"
-                            >
-                              ×
-                            </button>
-                          )}
-                        </div>
-                      )
-                    })}
+                        )}
+                        {job.species && (
+                          <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, background: '#f5f5f7', color: '#6e6e73' }}>
+                            {job.species}
+                          </span>
+                        )}
+                        {job.tm_type && (
+                          <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: '#ffeaea', color: '#c0392b' }}>
+                            TM: {job.tm_type}
+                          </span>
+                        )}
+                        {allDone && (
+                          <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: '#e8f8ed', color: '#34c759' }}>
+                            ✓ Done
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Metrics */}
+                      <div className="grid grid-cols-4 gap-1" style={{ marginTop: 12 }}>
+                        {job.spans != null && (
+                          <div className="text-center">
+                            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Spans</div>
+                            <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--apple-text)' }}>{job.spans}</div>
+                          </div>
+                        )}
+                        {job.hs_hrs != null && (
+                          <div className="text-center">
+                            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>H&S</div>
+                            <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--apple-text)' }}>{job.hs_hrs}h</div>
+                          </div>
+                        )}
+                        {job.ewp_hrs != null && (
+                          <div className="text-center">
+                            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>EWP</div>
+                            <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--apple-text)' }}>{job.ewp_hrs}h</div>
+                          </div>
+                        )}
+                        {job.cleanup_hrs != null && (
+                          <div className="text-center">
+                            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cleanup</div>
+                            <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--apple-text)' }}>{job.cleanup_hrs}h</div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Phase pills */}
+                      <div className="flex flex-wrap gap-1" style={{ marginTop: 10 }}>
+                        <PhasePill label="H&S" status={phases.main} />
+                        <PhasePill label="EWP" status={phases.bucket} />
+                        <PhasePill label="Chip" status={phases.chip} />
+                      </div>
+
+                      {/* Crew assignment badges */}
+                      {['main', 'bucket', 'chip'].map(ph => {
+                        const asg = asgns[ph]; if (!asg) return null
+                        const phLabel = ph === 'main' ? 'H&S' : ph === 'bucket' ? 'EWP' : 'Chip'
+                        const comp = comps[ph]
+                        return (
+                          <div key={ph} className="flex items-center gap-1.5" style={{ marginTop: 4 }}>
+                            <span style={{
+                              padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                              background: comp ? '#e8f8ed' : '#e8f4fd', color: comp ? '#248a3d' : '#0071e3',
+                            }}>
+                              {phLabel}: {asg.crew_name} · {asg.planned_date} {comp && '✓'}
+                            </span>
+                            {!comp && (
+                              <button
+                                onClick={e => { e.stopPropagation(); unassignJob(job.job_id, ph) }}
+                                style={{ background: 'none', border: 'none', color: 'var(--apple-red)', fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
 
                 {/* Expand toggle */}
                 <button
                   onClick={() => toggleExpand(job.job_id)}
-                  className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-600 font-medium border-t border-gray-100 text-center transition-colors"
+                  style={{
+                    background: 'none', border: 'none', borderTop: '1px solid var(--apple-separator)',
+                    padding: '8px 16px', fontSize: 11, fontWeight: 500,
+                    color: 'var(--apple-tertiary)', cursor: 'pointer', textAlign: 'center',
+                    transition: 'color 0.15s ease',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.color = 'var(--apple-secondary)'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'var(--apple-tertiary)'}
                 >
                   {isExpanded ? '▲ LESS DETAIL' : '▼ MORE DETAIL'}
                 </button>
 
                 {isExpanded && (
-                  <div className="px-3 pb-3 text-xs text-gray-500 space-y-1 italic border-t border-gray-100 pt-2">
-                    {job.pole_no && <p><strong className="not-italic text-gray-600">Pole:</strong> {job.pole_no}</p>}
-                    {job.comments && <p><strong className="not-italic text-gray-600">Comments:</strong> {job.comments}</p>}
-                    {job.ok_lett && <p><strong className="not-italic text-gray-600">OK Letter:</strong> {job.ok_lett}</p>}
-                    {job.owner && <p><strong className="not-italic text-gray-600">Owner:</strong> {job.owner} {job.phone && `· ${job.phone}`}</p>}
-                    {job.notify && <p><strong className="not-italic text-gray-600">Notify:</strong> {job.notify}</p>}
-                    {job.additional && <p><strong className="not-italic text-gray-600">Additional:</strong> {job.additional}</p>}
-                    {job.road_level && <p><strong className="not-italic text-gray-600">Road Level:</strong> {job.road_level}</p>}
+                  <div style={{
+                    padding: '12px 16px', borderTop: '1px solid var(--apple-separator)',
+                    fontSize: 12, color: 'var(--apple-secondary)', fontStyle: 'italic',
+                  }}>
+                    <div className="space-y-1">
+                      {job.pole_no && <p><strong style={{ fontStyle: 'normal', color: 'var(--apple-text)' }}>Pole:</strong> {job.pole_no}</p>}
+                      {job.comments && <p><strong style={{ fontStyle: 'normal', color: 'var(--apple-text)' }}>Comments:</strong> {job.comments}</p>}
+                      {job.ok_lett && <p><strong style={{ fontStyle: 'normal', color: 'var(--apple-text)' }}>OK Letter:</strong> {job.ok_lett}</p>}
+                      {job.owner && <p><strong style={{ fontStyle: 'normal', color: 'var(--apple-text)' }}>Owner:</strong> {job.owner} {job.phone && `· ${job.phone}`}</p>}
+                      {job.notify && <p><strong style={{ fontStyle: 'normal', color: 'var(--apple-text)' }}>Notify:</strong> {job.notify}</p>}
+                      {job.additional && <p><strong style={{ fontStyle: 'normal', color: 'var(--apple-text)' }}>Additional:</strong> {job.additional}</p>}
+                      {job.road_level && <p><strong style={{ fontStyle: 'normal', color: 'var(--apple-text)' }}>Road Level:</strong> {job.road_level}</p>}
+                    </div>
                   </div>
                 )}
               </div>
             )
           })}
         </div>
-        {filtered.length === 0 && <p className="text-gray-400 text-center py-8">No jobs match filters</p>}
+        {filtered.length === 0 && <p className="text-center py-8" style={{ color: 'var(--apple-tertiary)' }}>No jobs match filters</p>}
       </div>
 
-      {/* Floating assignment bar */}
+      {/* Floating assign bar */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300 ease-out"
-        style={{ transform: selected.size > 0 ? 'translateY(0)' : 'translateY(100%)' }}
+        style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+          transform: selected.size > 0 ? 'translateY(0)' : 'translateY(100%)',
+          transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+        }}
       >
-        <div className="bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] px-4 py-3">
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.92)',
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            borderTop: '1px solid var(--apple-separator)',
+            borderRadius: '16px 16px 0 0',
+            boxShadow: '0 -4px 24px rgba(0,0,0,0.08)',
+            padding: '12px 16px',
+          }}
+        >
           {assignError && (
-            <p className="text-red-600 text-sm bg-red-50 rounded-lg p-2 mb-2">{assignError}</p>
+            <p style={{ fontSize: 13, color: 'var(--apple-red)', background: '#fff0f0', borderRadius: 8, padding: 8, marginBottom: 8 }}>{assignError}</p>
           )}
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-            <span className="font-bold text-sm text-gray-900 flex-shrink-0">
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--apple-text)', flexShrink: 0 }}>
               {selected.size} job{selected.size !== 1 ? 's' : ''} selected
             </span>
             <div className="flex flex-col sm:flex-row gap-2 flex-1">
-              <select value={barPhase} onChange={e => setBarPhase(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+              <select value={barPhase} onChange={e => setBarPhase(e.target.value)}>
                 {PHASES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
               </select>
-              <select value={barCrew} onChange={e => setBarCrew(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+              <select value={barCrew} onChange={e => setBarCrew(e.target.value)}>
                 <option value="">Select crew</option>
                 {crews.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
-              <input type="date" value={barDate} onChange={e => setBarDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
+              <input type="date" value={barDate} onChange={e => setBarDate(e.target.value)} />
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 onClick={handleAssign}
                 disabled={!barCrew || assigning}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500 text-white px-6 py-2 rounded-lg text-sm font-semibold transition-colors"
+                style={{
+                  background: !barCrew || assigning ? 'var(--apple-segment-bg)' : 'var(--apple-blue)',
+                  color: !barCrew || assigning ? 'var(--apple-tertiary)' : 'white',
+                  border: 'none', borderRadius: 8, padding: '8px 20px',
+                  fontSize: 14, fontWeight: 500, cursor: !barCrew || assigning ? 'default' : 'pointer',
+                  transition: 'var(--apple-transition)',
+                }}
               >
                 {assigning ? 'Assigning...' : 'Assign to Crew'}
               </button>
               <button
                 onClick={() => { setSelected(new Set()); setAssignError(null) }}
-                className="text-sm text-gray-500 hover:text-gray-700 underline"
+                style={{ background: 'none', border: 'none', fontSize: 13, color: 'var(--apple-secondary)', cursor: 'pointer', textDecoration: 'underline' }}
               >
                 Clear
               </button>

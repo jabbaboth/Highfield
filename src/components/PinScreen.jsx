@@ -13,11 +13,9 @@ export default function PinScreen() {
   function handleKey(digit) {
     if (pin.length < 6) setPin(p => p + digit)
   }
-
   function handleBackspace() {
     setPin(p => p.slice(0, -1))
   }
-
   function handleSubmit() {
     if (!selectedUser || pin.length < 4) return
     if (selectedUser.pin === pin) {
@@ -32,82 +30,126 @@ export default function PinScreen() {
 
   if (loadingUsers) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1e3a5f, #0f172a)' }}>
-        <p className="text-blue-200 text-lg">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--apple-bg)' }}>
+        <p style={{ color: 'var(--apple-secondary)', fontSize: 17 }}>Loading...</p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #1e3a5f, #0f172a)' }}>
-      <div className={`bg-white rounded-2xl p-8 w-full max-w-xs shadow-2xl ${shake ? 'animate-shake' : ''}`}>
-        {/* Header */}
-        <div className="text-center mb-6">
-          <div className="w-14 h-14 rounded-xl mx-auto mb-3 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-            <span className="text-white text-2xl font-bold">H</span>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--apple-bg)' }}>
+      <div
+        className={shake ? 'animate-shake' : ''}
+        style={{
+          background: 'white', borderRadius: 20, padding: '40px 32px',
+          width: '100%', maxWidth: 360,
+          boxShadow: '0 8px 40px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)',
+        }}
+      >
+        {/* Logo */}
+        <div className="text-center" style={{ marginBottom: 32 }}>
+          <div
+            className="mx-auto flex items-center justify-center"
+            style={{
+              width: 56, height: 56, borderRadius: 14, marginBottom: 16,
+              background: 'var(--apple-blue)', color: 'white',
+              fontSize: 24, fontWeight: 700,
+            }}
+          >
+            H
           </div>
-          <h1 className="text-xl font-bold text-gray-900">Highfield</h1>
-          <p className="text-gray-500 text-sm">Contract Planner</p>
+          <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--apple-text)', letterSpacing: '-0.02em' }}>
+            Highfield
+          </h1>
+          <p style={{ fontSize: 14, color: 'var(--apple-secondary)', marginTop: 2 }}>
+            Contract Planner
+          </p>
         </div>
 
-        {/* Step 1: Select user */}
-        <label className="text-sm font-medium text-gray-700 block mb-1">Who are you?</label>
+        {/* User select */}
+        <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--apple-secondary)', display: 'block', marginBottom: 6 }}>
+          Who are you?
+        </label>
         <select
           value={selectedUserId}
           onChange={e => { setSelectedUserId(e.target.value); setPin(''); setError('') }}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm mb-4 bg-white"
+          style={{ width: '100%', marginBottom: 20 }}
         >
           <option value="">Select your name...</option>
-          {users.map(u => (
-            <option key={u.id} value={u.id}>{u.name}</option>
-          ))}
+          {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
 
-        {/* Step 2: Enter PIN (only shown after selecting user) */}
+        {/* PIN entry */}
         {selectedUserId && (
           <>
-            <label className="text-sm font-medium text-gray-700 block mb-2">Enter your PIN</label>
+            <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--apple-secondary)', display: 'block', marginBottom: 12 }}>
+              Enter your PIN
+            </label>
 
-            {/* PIN dots */}
-            <div className="flex justify-center gap-2 mb-4">
+            <div className="flex justify-center gap-2" style={{ marginBottom: 16 }}>
               {[...Array(4)].map((_, i) => (
                 <div
                   key={i}
-                  className={`w-3.5 h-3.5 rounded-full transition-colors ${i < pin.length ? 'bg-blue-600' : 'bg-gray-200'}`}
+                  style={{
+                    width: 12, height: 12, borderRadius: '50%',
+                    background: i < pin.length ? 'var(--apple-blue)' : 'var(--apple-segment-bg)',
+                    transition: 'background 0.15s ease',
+                  }}
                 />
               ))}
             </div>
 
-            {error && <p className="text-red-500 text-xs text-center mb-2">{error}</p>}
+            {error && (
+              <p className="text-center" style={{ fontSize: 13, color: 'var(--apple-red)', marginBottom: 12 }}>{error}</p>
+            )}
 
-            {/* Keypad */}
-            <div className="grid grid-cols-3 gap-2 mb-2">
+            <div className="grid grid-cols-3 gap-2" style={{ marginBottom: 8 }}>
               {[1,2,3,4,5,6,7,8,9].map(d => (
                 <button
                   key={d}
                   onClick={() => handleKey(String(d))}
-                  className="bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-900 text-xl font-semibold py-3.5 rounded-xl transition-colors"
+                  style={{
+                    background: 'var(--apple-bg)', border: 'none', borderRadius: 10,
+                    fontSize: 22, fontWeight: 400, color: 'var(--apple-text)',
+                    padding: '14px 0', cursor: 'pointer',
+                    transition: 'background 0.1s ease',
+                  }}
+                  onMouseDown={e => e.currentTarget.style.background = '#dddde0'}
+                  onMouseUp={e => e.currentTarget.style.background = 'var(--apple-bg)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'var(--apple-bg)'}
                 >
                   {d}
                 </button>
               ))}
               <button
                 onClick={handleBackspace}
-                className="bg-gray-50 hover:bg-gray-100 text-gray-500 text-lg py-3.5 rounded-xl"
+                style={{
+                  background: 'var(--apple-bg)', border: 'none', borderRadius: 10,
+                  fontSize: 18, color: 'var(--apple-secondary)', padding: '14px 0', cursor: 'pointer',
+                }}
               >
                 ←
               </button>
               <button
                 onClick={() => handleKey('0')}
-                className="bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-900 text-xl font-semibold py-3.5 rounded-xl"
+                style={{
+                  background: 'var(--apple-bg)', border: 'none', borderRadius: 10,
+                  fontSize: 22, fontWeight: 400, color: 'var(--apple-text)', padding: '14px 0', cursor: 'pointer',
+                }}
               >
                 0
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={pin.length < 4}
-                className="text-white text-sm font-semibold py-3.5 rounded-xl disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
-                style={pin.length >= 4 ? { background: 'linear-gradient(135deg, #2563eb, #1e40af)' } : {}}
+                style={{
+                  background: pin.length >= 4 ? 'var(--apple-blue)' : 'var(--apple-segment-bg)',
+                  border: 'none', borderRadius: 10,
+                  fontSize: 14, fontWeight: 500,
+                  color: pin.length >= 4 ? 'white' : 'var(--apple-tertiary)',
+                  padding: '14px 0', cursor: pin.length >= 4 ? 'pointer' : 'default',
+                  transition: 'var(--apple-transition)',
+                }}
               >
                 Go
               </button>

@@ -3,6 +3,27 @@ import { useContractData } from '../lib/useContractData'
 import { useAuth } from '../lib/useAuth'
 import { crewColor, feederStyle } from '../lib/feeder'
 
+function Section({ title, subtitle, children }) {
+  return (
+    <section style={{ background: 'white', borderRadius: 'var(--apple-radius-lg)', boxShadow: 'var(--apple-shadow)', overflow: 'hidden' }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--apple-separator)' }}>
+        <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--apple-text)' }}>{title}</h2>
+        {subtitle && <p style={{ fontSize: 12, color: 'var(--apple-secondary)', marginTop: 2 }}>{subtitle}</p>}
+      </div>
+      <div style={{ padding: 20 }}>{children}</div>
+    </section>
+  )
+}
+
+function Stat({ label, value }) {
+  return (
+    <div style={{ background: 'var(--apple-bg)', borderRadius: 10, padding: 12 }}>
+      <p style={{ fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</p>
+      <p style={{ fontSize: 22, fontWeight: 600, color: 'var(--apple-text)', marginTop: 2 }}>{value}</p>
+    </div>
+  )
+}
+
 export default function Settings() {
   const { jobs, assignments, completions, completionsByJob, crews, addCrew, removeCrew, importJobs, loading } = useContractData()
   const { users, addUser, updateUser, removeUser } = useAuth()
@@ -11,7 +32,6 @@ export default function Settings() {
   const [importing, setImporting] = useState(false)
   const fileRef = useRef()
 
-  // User management state
   const [newUserName, setNewUserName] = useState('')
   const [newUserPin, setNewUserPin] = useState('')
   const [newUserRole, setNewUserRole] = useState('crew')
@@ -26,184 +46,132 @@ export default function Settings() {
     const totalEwp = jobs.reduce((s, j) => s + (parseFloat(j.ewp_hrs) || 0), 0)
     const totalCleanup = jobs.reduce((s, j) => s + (parseFloat(j.cleanup_hrs) || 0), 0)
     const withTm = jobs.filter(j => j.tm_type).length
-    const withLv = jobs.filter(j => j.lv).length
-    return { total: jobs.length, totalSpans, totalHs, totalEwp, totalCleanup, withTm, withLv }
+    return { total: jobs.length, totalSpans, totalHs, totalEwp, totalCleanup, withTm }
   }, [jobs])
 
-  // Job map for activity log
-  const jobMap = useMemo(() => {
-    const m = {}
-    jobs.forEach(j => { m[String(j.job_id)] = j })
-    return m
-  }, [jobs])
+  const jobMap = useMemo(() => { const m = {}; jobs.forEach(j => { m[String(j.job_id)] = j }); return m }, [jobs])
 
-  // Recent activity: last 50 completions sorted by date
   const recentActivity = useMemo(() => {
-    return [...completions]
-      .sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || ''))
-      .slice(0, 50)
+    return [...completions].sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || '')).slice(0, 50)
   }, [completions])
 
   async function handleAddCrew(e) {
-    e.preventDefault()
-    if (!newCrew.trim()) return
-    await addCrew(newCrew.trim())
-    setNewCrew('')
+    e.preventDefault(); if (!newCrew.trim()) return
+    await addCrew(newCrew.trim()); setNewCrew('')
   }
-
   async function handleAddUser(e) {
-    e.preventDefault()
-    if (!newUserName.trim() || !newUserPin.trim()) return
+    e.preventDefault(); if (!newUserName.trim() || !newUserPin.trim()) return
     await addUser(newUserName.trim(), newUserPin.trim(), newUserRole)
     setNewUserName(''); setNewUserPin(''); setNewUserRole('crew')
   }
-
   async function handleSaveEdit() {
     if (!editingUser) return
-    const updates = {}
-    if (editPin) updates.pin = editPin
-    if (editRole) updates.role = editRole
-    await updateUser(editingUser.id, updates)
-    setEditingUser(null); setEditPin(''); setEditRole('')
+    const updates = {}; if (editPin) updates.pin = editPin; if (editRole) updates.role = editRole
+    await updateUser(editingUser.id, updates); setEditingUser(null); setEditPin(''); setEditRole('')
   }
-
-  async function handleRemoveUser(id) {
-    await removeUser(id)
-    setConfirmRemove(null)
-  }
+  async function handleRemoveUser(id) { await removeUser(id); setConfirmRemove(null) }
 
   function exportCSV() {
     let csv = 'Type,Job ID,Phase,Crew,Date,Completed At,Completed By,Notes\n'
     assignments.forEach(a => {
-      const jid = String(a.job_id)
-      const phase = a.phase || 'main'
+      const jid = String(a.job_id); const phase = a.phase || 'main'
       const comp = completionsByJob[jid]?.[phase]
       csv += `assignment,${a.job_id},${phase},${a.crew_name},${a.planned_date},${comp?.completed_at || ''},${comp?.completed_by_name || ''},${(comp?.notes || '').replace(/,/g, ';')}\n`
     })
-    completions.forEach(c => {
-      const phase = c.phase || 'main'
-      if (!assignments.find(a => a.job_id === c.job_id && (a.phase || 'main') === phase)) {
-        csv += `completion,${c.job_id},${phase},,,"${c.completed_at}","${c.completed_by_name || ''}","${(c.notes || '').replace(/,/g, ';')}"\n`
-      }
-    })
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
+    const a = document.createElement('a'); a.href = url
     a.download = `highfield-export-${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    a.click(); URL.revokeObjectURL(url)
   }
 
   async function handleImport(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const file = e.target.files?.[0]; if (!file) return
     setImporting(true); setImportStatus(null)
     try {
-      const text = await file.text()
-      const data = JSON.parse(text)
+      const text = await file.text(); const data = JSON.parse(text)
       if (!Array.isArray(data)) throw new Error('JSON must be an array of jobs')
       const errors = await importJobs(data)
-      if (errors) { setImportStatus({ ok: false, msg: `Imported with ${errors.length} errors` }) }
-      else { setImportStatus({ ok: true, msg: `Imported ${data.length} jobs successfully` }) }
+      setImportStatus(errors ? { ok: false, msg: `Imported with ${errors.length} errors` } : { ok: true, msg: `Imported ${data.length} jobs successfully` })
     } catch (err) { setImportStatus({ ok: false, msg: err.message }) }
-    setImporting(false)
-    if (fileRef.current) fileRef.current.value = ''
+    setImporting(false); if (fileRef.current) fileRef.current.value = ''
   }
 
-  if (loading) return <div className="p-4 text-gray-500">Loading...</div>
+  if (loading) return <div style={{ padding: 24, color: 'var(--apple-secondary)' }}>Loading...</div>
+
+  const btnPrimary = { background: 'var(--apple-blue)', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'var(--apple-transition)' }
+  const btnSecondary = { background: 'var(--apple-bg)', color: 'var(--apple-text)', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }
+  const btnDanger = { background: '#fff0f0', color: 'var(--apple-red)', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, cursor: 'pointer' }
 
   return (
-    <div className="p-4 space-y-6 max-w-2xl mx-auto">
-
+    <div style={{ padding: 16, maxWidth: 720, margin: '0 auto' }} className="space-y-5">
       {/* User Management */}
-      <section className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="p-4" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-          <h2 className="font-bold text-sm text-white">User Management</h2>
-          <p className="text-xs text-blue-100 mt-0.5">Manage logins and roles</p>
-        </div>
-        <div className="p-4">
-          <div className="space-y-2 mb-4">
-            {users.map(u => (
-              <div key={u.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-semibold text-gray-900">{u.name}</span>
-                  <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-700">{u.role}</span>
-                  <span className="ml-2 text-xs text-gray-400 font-mono tracking-widest">{'••••'}</span>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => { setEditingUser(u); setEditPin(''); setEditRole(u.role) }}
-                    className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                  >Edit</button>
-                  <button
-                    onClick={() => setConfirmRemove(u.id)}
-                    className="text-red-400 hover:text-red-600 text-xs font-medium"
-                  >Remove</button>
-                </div>
+      <Section title="User Management" subtitle="Manage logins and roles">
+        <div className="space-y-2" style={{ marginBottom: 16 }}>
+          {users.map(u => (
+            <div key={u.id} className="flex items-center justify-between" style={{ padding: '10px 14px', background: 'var(--apple-bg)', borderRadius: 10 }}>
+              <div>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--apple-text)' }}>{u.name}</span>
+                <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600, background: '#e8f4fd', color: '#0071e3', textTransform: 'uppercase' }}>{u.role}</span>
+                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--apple-tertiary)', fontFamily: 'monospace', letterSpacing: 2 }}>••••</span>
               </div>
-            ))}
-            {users.length === 0 && <p className="text-sm text-gray-400 text-center py-2">No users</p>}
+              <div className="flex gap-2">
+                <button onClick={() => { setEditingUser(u); setEditPin(''); setEditRole(u.role) }}
+                  style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px' }}>Edit</button>
+                <button onClick={() => setConfirmRemove(u.id)} style={{ ...btnDanger, padding: '4px 10px' }}>Remove</button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {confirmRemove && (
+          <div style={{ background: '#fff0f0', borderRadius: 10, padding: 14, marginBottom: 12 }}>
+            <p style={{ fontSize: 13, color: 'var(--apple-red)' }}>Remove this user? This cannot be undone.</p>
+            <div className="flex gap-2" style={{ marginTop: 8 }}>
+              <button onClick={() => handleRemoveUser(confirmRemove)} style={{ ...btnDanger, background: 'var(--apple-red)', color: 'white' }}>Yes, Remove</button>
+              <button onClick={() => setConfirmRemove(null)} style={btnSecondary}>Cancel</button>
+            </div>
           </div>
+        )}
 
-          {/* Confirm remove dialog */}
-          {confirmRemove && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
-              <p className="text-sm text-red-700">Remove this user? This cannot be undone.</p>
-              <div className="flex gap-2 mt-2">
-                <button onClick={() => handleRemoveUser(confirmRemove)} className="bg-red-600 text-white px-3 py-1 rounded text-xs font-semibold">Yes, Remove</button>
-                <button onClick={() => setConfirmRemove(null)} className="border border-gray-300 px-3 py-1 rounded text-xs">Cancel</button>
-              </div>
+        {editingUser && (
+          <div style={{ background: '#e8f4fd', borderRadius: 10, padding: 14, marginBottom: 12 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#0071e3', marginBottom: 8 }}>Editing: {editingUser.name}</p>
+            <div className="flex flex-wrap gap-2">
+              <input value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="New PIN (blank to keep)" style={{ flex: 1 }} />
+              <select value={editRole} onChange={e => setEditRole(e.target.value)}>
+                <option value="admin">Admin</option>
+                <option value="foreman">Foreman</option>
+                <option value="crew">Crew</option>
+              </select>
+              <button onClick={handleSaveEdit} style={btnPrimary}>Save</button>
+              <button onClick={() => setEditingUser(null)} style={btnSecondary}>Cancel</button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Edit user inline */}
-          {editingUser && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-              <p className="text-sm font-semibold text-blue-900 mb-2">Editing: {editingUser.name}</p>
-              <div className="flex flex-wrap gap-2">
-                <input value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="New PIN (leave blank to keep)" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm flex-1" />
-                <select value={editRole} onChange={e => setEditRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
-                  <option value="admin">Admin</option>
-                  <option value="foreman">Foreman</option>
-                  <option value="crew">Crew</option>
-                </select>
-                <button onClick={handleSaveEdit} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">Save</button>
-                <button onClick={() => setEditingUser(null)} className="border border-gray-300 px-3 py-1.5 rounded-lg text-xs">Cancel</button>
-              </div>
-            </div>
-          )}
-
-          {/* Add new user */}
-          <form onSubmit={handleAddUser} className="flex flex-wrap gap-2">
-            <input value={newUserName} onChange={e => setNewUserName(e.target.value)} placeholder="Name" className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[100px]" />
-            <input value={newUserPin} onChange={e => setNewUserPin(e.target.value)} placeholder="PIN" className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-20" />
-            <select value={newUserRole} onChange={e => setNewUserRole(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-              <option value="crew">Crew</option>
-              <option value="foreman">Foreman</option>
-              <option value="admin">Admin</option>
-            </select>
-            <button type="submit" className="text-white px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-              Add User
-            </button>
-          </form>
-        </div>
-      </section>
+        <form onSubmit={handleAddUser} className="flex flex-wrap gap-2">
+          <input value={newUserName} onChange={e => setNewUserName(e.target.value)} placeholder="Name" style={{ flex: 1, minWidth: 100 }} />
+          <input value={newUserPin} onChange={e => setNewUserPin(e.target.value)} placeholder="PIN" style={{ width: 80 }} />
+          <select value={newUserRole} onChange={e => setNewUserRole(e.target.value)}>
+            <option value="crew">Crew</option>
+            <option value="foreman">Foreman</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button type="submit" style={btnPrimary}>Add User</button>
+        </form>
+      </Section>
 
       {/* Recent Activity */}
-      <section className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="p-4" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-          <h2 className="font-bold text-sm text-white">Recent Activity</h2>
-          <p className="text-xs text-blue-100 mt-0.5">Last 50 completions</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+      <Section title="Recent Activity" subtitle="Last 50 completions">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: 13 }}>
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500">Date/Time</th>
-                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500">Job</th>
-                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500">Completed By</th>
-                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500">Feeder</th>
+              <tr style={{ borderBottom: '1px solid var(--apple-separator)' }}>
+                <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Date/Time</th>
+                <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Job</th>
+                <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Completed By</th>
+                <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Feeder</th>
               </tr>
             </thead>
             <tbody>
@@ -211,115 +179,85 @@ export default function Settings() {
                 const job = jobMap[String(c.job_id)]
                 const fs = job ? feederStyle(job.feeder) : null
                 return (
-                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">
+                  <tr key={i} style={{ borderBottom: '1px solid var(--apple-separator)' }}>
+                    <td style={{ padding: '8px 10px', color: 'var(--apple-secondary)', whiteSpace: 'nowrap' }}>
                       {c.completed_at ? new Date(c.completed_at).toLocaleString() : '—'}
                     </td>
-                    <td className="px-3 py-2 text-xs text-gray-900 truncate max-w-[200px]">
+                    <td style={{ padding: '8px 10px', color: 'var(--apple-text)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {job?.full_address || `Job #${c.job_id}`}
                     </td>
-                    <td className="px-3 py-2 text-xs font-medium text-gray-700">
+                    <td style={{ padding: '8px 10px', fontWeight: 500, color: 'var(--apple-text)' }}>
                       {c.completed_by_name || '—'}
                     </td>
-                    <td className="px-3 py-2">
-                      {fs && (
-                        <span className="px-2 py-0.5 rounded text-xs font-bold text-white" style={{ background: fs.border }}>
-                          {job.feeder}
-                        </span>
-                      )}
+                    <td style={{ padding: '8px 10px' }}>
+                      {fs && <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: fs.border + '20', color: fs.border }}>{job.feeder}</span>}
                     </td>
                   </tr>
                 )
               })}
               {recentActivity.length === 0 && (
-                <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 text-xs">No completions yet</td></tr>
+                <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: 'var(--apple-tertiary)' }}>No completions yet</td></tr>
               )}
             </tbody>
           </table>
         </div>
-      </section>
+      </Section>
 
-      {/* Import jobs */}
-      <section className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="p-4" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-          <h2 className="font-bold text-sm text-white">Import Jobs</h2>
-          <p className="text-xs text-blue-100 mt-0.5">Upload highfield_jobs.json to replace all jobs</p>
-        </div>
-        <div className="p-4">
-          <label className={`block w-full text-center py-3 rounded-lg border-2 border-dashed cursor-pointer text-sm font-medium transition-colors ${importing ? 'border-gray-200 text-gray-400' : 'border-blue-300 text-blue-600 hover:bg-blue-50'}`}>
-            {importing ? 'Importing...' : 'Choose JSON file'}
-            <input ref={fileRef} type="file" accept=".json" onChange={handleImport} disabled={importing} className="hidden" />
-          </label>
-          {importStatus && (
-            <p className={`text-sm mt-2 ${importStatus.ok ? 'text-green-600' : 'text-red-600'}`}>{importStatus.msg}</p>
-          )}
-        </div>
-      </section>
+      {/* Import Jobs */}
+      <Section title="Import Jobs" subtitle="Upload highfield_jobs.json to replace all jobs">
+        <label style={{
+          display: 'block', width: '100%', textAlign: 'center', padding: 16, borderRadius: 10,
+          border: '2px dashed var(--apple-separator)', cursor: 'pointer',
+          fontSize: 14, fontWeight: 500,
+          color: importing ? 'var(--apple-tertiary)' : 'var(--apple-blue)',
+          transition: 'var(--apple-transition)',
+        }}>
+          {importing ? 'Importing...' : 'Choose JSON file'}
+          <input ref={fileRef} type="file" accept=".json" onChange={handleImport} disabled={importing} style={{ display: 'none' }} />
+        </label>
+        {importStatus && (
+          <p style={{ fontSize: 13, marginTop: 8, color: importStatus.ok ? 'var(--apple-green)' : 'var(--apple-red)' }}>{importStatus.msg}</p>
+        )}
+      </Section>
 
-      {/* Crew management */}
-      <section className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="p-4" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-          <h2 className="font-bold text-sm text-white">Crew Members</h2>
+      {/* Crew Management */}
+      <Section title="Crew Members">
+        <div className="space-y-2" style={{ marginBottom: 12 }}>
+          {crews.map(c => {
+            const color = crewColor(crews, c.name)
+            return (
+              <div key={c.name} className="flex items-center justify-between" style={{ padding: '10px 14px', background: 'var(--apple-bg)', borderRadius: 10, borderLeft: `3px solid ${color}` }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--apple-text)' }}>{c.name}</span>
+                <button onClick={() => removeCrew(c.name)} style={btnDanger}>Remove</button>
+              </div>
+            )
+          })}
+          {crews.length === 0 && <p style={{ fontSize: 13, color: 'var(--apple-tertiary)', textAlign: 'center', padding: 8 }}>No crews added yet</p>}
         </div>
-        <div className="p-4">
-          <div className="space-y-2 mb-3">
-            {crews.map(c => {
-              const color = crewColor(crews, c.name)
-              return (
-                <div key={c.name} className="flex items-center justify-between py-2 px-3 rounded-lg" style={{ background: color + '15', borderLeft: `3px solid ${color}` }}>
-                  <span className="text-sm font-medium" style={{ color }}>{c.name}</span>
-                  <button onClick={() => removeCrew(c.name)} className="text-red-400 hover:text-red-600 text-sm">Remove</button>
-                </div>
-              )
-            })}
-            {crews.length === 0 && <p className="text-sm text-gray-400 text-center py-2">No crews added yet</p>}
-          </div>
-          <form onSubmit={handleAddCrew} className="flex gap-2">
-            <input value={newCrew} onChange={e => setNewCrew(e.target.value)} placeholder="New crew name" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-            <button type="submit" className="text-white px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>Add</button>
-          </form>
-        </div>
-      </section>
+        <form onSubmit={handleAddCrew} className="flex gap-2">
+          <input value={newCrew} onChange={e => setNewCrew(e.target.value)} placeholder="New crew name" style={{ flex: 1 }} />
+          <button type="submit" style={btnPrimary}>Add</button>
+        </form>
+      </Section>
 
-      {/* Contract totals */}
-      <section className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="p-4" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-          <h2 className="font-bold text-sm text-white">Contract Totals</h2>
+      {/* Contract Totals */}
+      <Section title="Contract Totals">
+        <div className="grid grid-cols-2 gap-3">
+          <Stat label="Total Jobs" value={stats.total} />
+          <Stat label="Total Spans" value={stats.totalSpans} />
+          <Stat label="H&S Hours" value={stats.totalHs.toFixed(1)} />
+          <Stat label="EWP Hours" value={stats.totalEwp.toFixed(1)} />
+          <Stat label="Chip Hours" value={stats.totalCleanup.toFixed(1)} />
+          <Stat label="Jobs with TM" value={stats.withTm} />
         </div>
-        <div className="p-4">
-          <div className="grid grid-cols-2 gap-3">
-            <Stat label="Total Jobs" value={stats.total} />
-            <Stat label="Total Spans" value={stats.totalSpans} />
-            <Stat label="H&S Hours" value={stats.totalHs.toFixed(1)} />
-            <Stat label="EWP Hours" value={stats.totalEwp.toFixed(1)} />
-            <Stat label="Chip Hours" value={stats.totalCleanup.toFixed(1)} />
-            <Stat label="Jobs with TM" value={stats.withTm} />
-          </div>
-        </div>
-      </section>
+      </Section>
 
       {/* Export */}
-      <section className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="p-4" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-          <h2 className="font-bold text-sm text-white">Export Data</h2>
-        </div>
-        <div className="p-4">
-          <button onClick={exportCSV}
-            className="w-full text-white py-2.5 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
-            style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-            Download CSV
-          </button>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function Stat({ label, value }) {
-  return (
-    <div className="bg-gray-50 rounded-lg p-3">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-xl font-bold text-gray-900">{value}</p>
+      <Section title="Export Data">
+        <button onClick={exportCSV} style={{ ...btnPrimary, width: '100%', padding: '12px 20px' }}>
+          Download CSV
+        </button>
+      </Section>
     </div>
   )
 }
