@@ -1,15 +1,15 @@
 import { useState, useMemo } from 'react'
 import { useContractData } from '../lib/useContractData'
 import { useAuth } from '../lib/useAuth'
-import { FEEDERS, feederStyle, PHASES } from '../lib/feeder'
+import { FEEDERS, feederStyle, PHASES, needsPhase, isJobComplete } from '../lib/feeder'
 
 function getJobPipelineStage(job, assignmentsByJob, completionsByJob) {
   const jid = String(job.job_id)
   const a = assignmentsByJob[jid] || {}
   const c = completionsByJob[jid] || {}
-  if (c.chip) return 'complete'
+  if (isJobComplete(job, c)) return 'complete'
   if (a.chip) return 'chip_active'
-  if (c.bucket || (c.main && !job.ewp_hrs)) return 'ready_chip'
+  if (c.bucket || (c.main && !needsPhase(job, 'bucket'))) return 'ready_chip'
   if (a.bucket) return 'ewp_active'
   if (c.main) return 'ready_ewp'
   if (a.main) return 'hs_active'
@@ -42,10 +42,7 @@ export default function Progress() {
   const feederStats = useMemo(() => {
     return FEEDERS.map(f => {
       const fJobs = jobs.filter(j => String(j.feeder) === f)
-      const fullyDone = fJobs.filter(j => {
-        const c = completionsByJob[String(j.job_id)] || {}
-        return c.main && (c.bucket || !j.ewp_hrs) && (c.chip || !j.cleanup_hrs)
-      })
+      const fullyDone = fJobs.filter(j => isJobComplete(j, completionsByJob[String(j.job_id)]))
       const totalSpans = fJobs.reduce((s, j) => s + (parseFloat(j.spans) || 0), 0)
       const doneSpans = fullyDone.reduce((s, j) => s + (parseFloat(j.spans) || 0), 0)
       const totalHs = fJobs.reduce((s, j) => s + (parseFloat(j.hs_hrs) || 0), 0)
@@ -182,28 +179,51 @@ export default function Progress() {
                   {!a.main && !c.main && <span style={{ color: 'var(--apple-tertiary)' }}>Unplanned</span>}
                 </div>
               </div>
-              <div className="flex gap-1 flex-shrink-0">
+              <div className="flex items-center gap-1 flex-shrink-0">
                 {PHASES.map(p => {
-                  const comp = c[p.key]; const asg = a[p.key]
-                  if (!asg && !comp) return null
+                  const comp = c[p.key]
+                  const needed = needsPhase(job, p.key)
+                  const letter = p.key === 'main' ? 'H' : p.key === 'bucket' ? 'E' : 'C'
                   return (
                     <button key={p.key}
                       onClick={() => comp ? uncompleteJob(job.job_id, p.key) : completeJob(job.job_id, p.key, user?.id, user?.name)}
                       style={{
                         width: 26, height: 26, borderRadius: '50%',
-                        border: `2px solid ${comp ? 'var(--apple-green)' : '#d1d1d6'}`,
+                        border: `2px ${needed || comp ? 'solid' : 'dashed'} ${comp ? 'var(--apple-green)' : '#d1d1d6'}`,
                         background: comp ? 'var(--apple-green)' : 'none',
                         color: comp ? 'white' : '#d1d1d6',
                         fontSize: 10, fontWeight: 700, cursor: 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        opacity: !comp && !needed ? 0.4 : 1,
                         transition: 'var(--apple-transition)',
                       }}
-                      title={`${comp ? 'Uncomplete' : 'Complete'} ${p.label}`}
+                      title={`${comp ? 'Uncomplete' : 'Complete'} ${p.label}${!needed ? ' (not required)' : ''}`}
                     >
-                      {p.key === 'main' ? 'H' : p.key === 'bucket' ? 'E' : 'C'}
+                      {letter}
                     </button>
                   )
                 })}
+                {!fullyDone && (
+                  <button
+                    onClick={async () => {
+                      for (const p of PHASES) {
+                        if (!c[p.key] && needsPhase(job, p.key)) {
+                          await completeJob(job.job_id, p.key, user?.id, user?.name)
+                        }
+                      }
+                    }}
+                    style={{
+                      marginLeft: 4, padding: '4px 10px', borderRadius: 12,
+                      border: '1px solid var(--apple-green)', background: 'none',
+                      color: 'var(--apple-green)', fontSize: 10, fontWeight: 600,
+                      cursor: 'pointer', whiteSpace: 'nowrap',
+                      transition: 'var(--apple-transition)',
+                    }}
+                    title="Mark all required phases complete"
+                  >
+                    All ✓
+                  </button>
+                )}
               </div>
             </div>
           )

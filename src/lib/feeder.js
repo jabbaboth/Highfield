@@ -23,3 +23,19 @@ export const PHASES = [
   { key: 'bucket', label: 'EWP Crew', hrsField: 'ewp_hrs' },
   { key: 'chip', label: 'Chip Crew', hrsField: 'cleanup_hrs' },
 ]
+
+// Treats "0", "", null, undefined, 0 as "no hours required".
+// Important: JSON imports store these fields as strings, and !"0" is false in JS.
+export function needsPhase(job, phaseKey) {
+  const field = phaseKey === 'main' ? 'hs_hrs'
+              : phaseKey === 'bucket' ? 'ewp_hrs'
+              : 'cleanup_hrs'
+  return (parseFloat(job?.[field]) || 0) > 0
+}
+
+export function isJobComplete(job, completions) {
+  const c = completions || {}
+  return !!c.main
+    && (!!c.bucket || !needsPhase(job, 'bucket'))
+    && (!!c.chip   || !needsPhase(job, 'chip'))
+}

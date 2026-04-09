@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useContractData } from '../lib/useContractData'
 import { useAuth } from '../lib/useAuth'
-import { FEEDERS, feederStyle, PHASES } from '../lib/feeder'
+import { FEEDERS, feederStyle, PHASES, needsPhase, isJobComplete } from '../lib/feeder'
 
 function getJobPhaseStatus(job, assignmentsByJob, completionsByJob) {
   const jid = String(job.job_id)
@@ -10,7 +10,7 @@ function getJobPhaseStatus(job, assignmentsByJob, completionsByJob) {
   const mainStatus = c.main ? 'complete' : a.main ? 'assigned' : 'not started'
   const bucketUnlocked = !!c.main
   const bucketStatus = c.bucket ? 'complete' : a.bucket ? 'assigned' : bucketUnlocked ? 'not started' : 'locked'
-  const chipUnlocked = c.bucket ? true : (c.main && !job.ewp_hrs)
+  const chipUnlocked = c.bucket || (c.main && !needsPhase(job, 'bucket'))
   const chipStatus = c.chip ? 'complete' : a.chip ? 'assigned' : chipUnlocked ? 'not started' : 'locked'
   return { main: mainStatus, bucket: bucketStatus, chip: chipStatus }
 }
@@ -59,7 +59,7 @@ export default function Jobs() {
       if (streetFilter && j.street !== streetFilter) return false
       if (ewpFilter && j.ewp_type !== ewpFilter) return false
       const hasAny = a.main || a.bucket || a.chip
-      const allDone = c.main && (c.bucket || !j.ewp_hrs) && (c.chip || !j.cleanup_hrs)
+      const allDone = isJobComplete(j, c)
       if (statusFilter === 'Complete' && !allDone) return false
       if (statusFilter === 'Planned' && (!hasAny || allDone)) return false
       if (statusFilter === 'Unplanned' && (hasAny || allDone)) return false

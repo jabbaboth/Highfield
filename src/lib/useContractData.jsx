@@ -57,6 +57,8 @@ function useContractDataInternal() {
 
   useRealtimeTable('assignments', fetchAssignments)
   useRealtimeTable('completions', fetchCompletions)
+  useRealtimeTable('jobs', fetchJobs)
+  useRealtimeTable('crews', fetchCrews)
 
   // Multi-phase assign: phase = 'main' | 'bucket' | 'chip'
   const assignJobs = async (jobIds, crewName, plannedDate, phase = 'main', assignedByName = '') => {
