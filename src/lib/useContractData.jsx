@@ -1,11 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { supabase, CONTRACT_ID } from './supabase'
 import { useRealtimeTable } from './useRealtimeTable'
+import { useAuth } from './useAuth'
 
 const ContractDataContext = createContext(null)
 
 export function ContractDataProvider({ children }) {
-  const value = useContractDataInternal()
+  const { auditLog } = useAuth()
+  const value = useContractDataInternal(auditLog)
   return (
     <ContractDataContext.Provider value={value}>
       {children}
@@ -19,7 +21,8 @@ export function useContractData() {
   return ctx
 }
 
-function useContractDataInternal() {
+function useContractDataInternal(auditLog) {
+  const audit = auditLog || (async () => {}) // no-op fallback
   const [jobs, setJobs] = useState([])
   const [assignments, setAssignments] = useState([])
   const [completions, setCompletions] = useState([])
@@ -123,13 +126,19 @@ function useContractDataInternal() {
 
   const addCrew = async (name) => {
     const { error } = await supabase.from('crews').insert({ contract_id: CONTRACT_ID, name })
-    if (!error) await fetchCrews()
+    if (!error) {
+      await fetchCrews()
+      await audit('crew.create', 'crew', name, { name })
+    }
     return error
   }
 
   const removeCrew = async (name) => {
     const { error } = await supabase.from('crews').delete().eq('contract_id', CONTRACT_ID).eq('name', name)
-    if (!error) await fetchCrews()
+    if (!error) {
+      await fetchCrews()
+      await audit('crew.delete', 'crew', name, { name })
+    }
     return error
   }
 
@@ -145,6 +154,7 @@ function useContractDataInternal() {
       if (error) errors.push(error)
     }
     await fetchJobs()
+    await audit('jobs.import', 'jobs', null, { count: rows.length, errors: errors.length })
     return errors.length ? errors : null
   }
 

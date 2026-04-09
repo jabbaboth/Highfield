@@ -52,7 +52,14 @@ export default function App() {
 }
 
 function AppInner() {
-  const { user } = useAuth()
+  const { user, bootstrapping } = useAuth()
+  if (bootstrapping) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--apple-bg)' }}>
+        <p style={{ color: 'var(--apple-secondary)', fontSize: 15 }}>Checking session…</p>
+      </div>
+    )
+  }
   if (!user) return <PinScreen />
   return <AuthedApp />
 }

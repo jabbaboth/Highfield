@@ -7,6 +7,7 @@ export default function PinScreen() {
   const [pin, setPin] = useState('')
   const [shake, setShake] = useState(false)
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const selectedUser = users.find(u => u.id === selectedUserId)
 
@@ -16,16 +17,23 @@ export default function PinScreen() {
   function handleBackspace() {
     setPin(p => p.slice(0, -1))
   }
-  function handleSubmit() {
-    if (!selectedUser || pin.length < 4) return
-    if (selectedUser.pin === pin) {
-      login(selectedUser)
-    } else {
-      setShake(true)
+  async function handleSubmit() {
+    if (!selectedUser || pin.length < 4 || submitting) return
+    setSubmitting(true)
+    setError('')
+    const result = await login(selectedUser.id, pin)
+    setSubmitting(false)
+    if (result.ok) return
+    setShake(true)
+    setPin('')
+    if (result.error === 'locked') {
+      setError('Account locked. Try again in 10 minutes.')
+    } else if (result.error === 'wrong') {
       setError('Incorrect PIN')
-      setPin('')
-      setTimeout(() => setShake(false), 500)
+    } else {
+      setError('Could not log in. Try again.')
     }
+    setTimeout(() => setShake(false), 500)
   }
 
   if (loadingUsers) {

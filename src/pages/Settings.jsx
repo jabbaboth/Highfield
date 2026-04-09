@@ -1,6 +1,7 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useContractData } from '../lib/useContractData'
 import { useAuth } from '../lib/useAuth'
+import { supabase, CONTRACT_ID } from '../lib/supabase'
 import { crewColor, feederStyle } from '../lib/feeder'
 
 function Section({ title, subtitle, children }) {
@@ -39,6 +40,23 @@ export default function Settings() {
   const [editPin, setEditPin] = useState('')
   const [editRole, setEditRole] = useState('')
   const [confirmRemove, setConfirmRemove] = useState(null)
+  const [auditEntries, setAuditEntries] = useState([])
+  const [auditLoading, setAuditLoading] = useState(true)
+
+  async function fetchAudit() {
+    setAuditLoading(true)
+    const { data, error } = await supabase
+      .from('audit_log')
+      .select('*')
+      .eq('contract_id', CONTRACT_ID)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    if (error) console.error('fetchAudit:', error)
+    setAuditEntries(data || [])
+    setAuditLoading(false)
+  }
+
+  useEffect(() => { fetchAudit() }, [users, crews, jobs])
 
   const stats = useMemo(() => {
     const totalSpans = jobs.reduce((s, j) => s + (parseFloat(j.spans) || 0), 0)
@@ -138,7 +156,7 @@ export default function Settings() {
           <div style={{ background: '#e8f4fd', borderRadius: 10, padding: 14, marginBottom: 12 }}>
             <p style={{ fontSize: 13, fontWeight: 600, color: '#0071e3', marginBottom: 8 }}>Editing: {editingUser.name}</p>
             <div className="flex flex-wrap gap-2">
-              <input value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="New PIN (blank to keep)" style={{ flex: 1 }} />
+              <input type="password" inputMode="numeric" autoComplete="new-password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="New PIN (blank to keep)" style={{ flex: 1 }} />
               <select value={editRole} onChange={e => setEditRole(e.target.value)}>
                 <option value="admin">Admin</option>
                 <option value="foreman">Foreman</option>
@@ -152,7 +170,7 @@ export default function Settings() {
 
         <form onSubmit={handleAddUser} className="flex flex-wrap gap-2">
           <input value={newUserName} onChange={e => setNewUserName(e.target.value)} placeholder="Name" style={{ flex: 1, minWidth: 100 }} />
-          <input value={newUserPin} onChange={e => setNewUserPin(e.target.value)} placeholder="PIN" style={{ width: 80 }} />
+          <input type="password" inputMode="numeric" autoComplete="new-password" value={newUserPin} onChange={e => setNewUserPin(e.target.value)} placeholder="PIN" style={{ width: 80 }} />
           <select value={newUserRole} onChange={e => setNewUserRole(e.target.value)}>
             <option value="crew">Crew</option>
             <option value="foreman">Foreman</option>
@@ -197,6 +215,48 @@ export default function Settings() {
               })}
               {recentActivity.length === 0 && (
                 <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: 'var(--apple-tertiary)' }}>No completions yet</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      {/* Admin Activity */}
+      <Section title="Admin Activity" subtitle="Last 50 sensitive operations (user, crew, import)">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--apple-separator)' }}>
+                <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>When</th>
+                <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Who</th>
+                <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Action</th>
+                <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 500, color: 'var(--apple-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditEntries.map(e => (
+                <tr key={e.id} style={{ borderBottom: '1px solid var(--apple-separator)' }}>
+                  <td style={{ padding: '8px 10px', color: 'var(--apple-secondary)', whiteSpace: 'nowrap' }}>
+                    {e.created_at ? new Date(e.created_at).toLocaleString() : '—'}
+                  </td>
+                  <td style={{ padding: '8px 10px', fontWeight: 500, color: 'var(--apple-text)' }}>
+                    {e.actor_name || '—'}
+                  </td>
+                  <td style={{ padding: '8px 10px' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: '#e8f4fd', color: '#0071e3', fontFamily: 'monospace' }}>
+                      {e.action}
+                    </span>
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--apple-secondary)', fontSize: 12, fontFamily: 'monospace' }}>
+                    {e.payload ? JSON.stringify(e.payload) : '—'}
+                  </td>
+                </tr>
+              ))}
+              {!auditLoading && auditEntries.length === 0 && (
+                <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: 'var(--apple-tertiary)' }}>No admin activity yet</td></tr>
+              )}
+              {auditLoading && (
+                <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: 'var(--apple-tertiary)' }}>Loading…</td></tr>
               )}
             </tbody>
           </table>
