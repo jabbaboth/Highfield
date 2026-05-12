@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/useAuth'
 import PinScreen from './components/PinScreen'
+import ContractPicker from './components/ContractPicker'
 import Layout from './components/Layout'
 import { ContractDataProvider } from './lib/useContractData'
 import Jobs from './pages/Jobs'
@@ -52,7 +53,7 @@ export default function App() {
 }
 
 function AppInner() {
-  const { user, bootstrapping } = useAuth()
+  const { user, bootstrapping, contractId } = useAuth()
   if (bootstrapping) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--apple-bg)' }}>
@@ -60,6 +61,7 @@ function AppInner() {
       </div>
     )
   }
+  if (!contractId) return <ContractPicker />
   if (!user) return <PinScreen />
   return <AuthedApp />
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../lib/useAuth'
 
 export default function PinScreen() {
-  const { users, loadingUsers, login } = useAuth()
+  const { users, loadingUsers, login, contractName, clearContract, contracts } = useAuth()
   const [selectedUserId, setSelectedUserId] = useState('')
   const [pin, setPin] = useState('')
   const [shake, setShake] = useState(false)
@@ -67,11 +67,20 @@ export default function PinScreen() {
             H
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--apple-text)', letterSpacing: '-0.02em' }}>
-            Highfield
+            {contractName || 'Contract Planner'}
           </h1>
-          <p style={{ fontSize: 14, color: 'var(--apple-secondary)', marginTop: 2 }}>
-            Contract Planner
-          </p>
+          {contracts.length > 1 && (
+            <button
+              onClick={clearContract}
+              style={{
+                fontSize: 13, color: 'var(--apple-blue)', marginTop: 4,
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: 0, fontWeight: 500,
+              }}
+            >
+              ← Change contract
+            </button>
+          )}
         </div>
 
         {/* User select */}

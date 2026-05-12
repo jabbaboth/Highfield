@@ -27,6 +27,18 @@ These SQL files harden the Highfield database. **Run them against your Supabase 
 - Creates an `audit_log` table that records sensitive operations (user create/update/delete, crew add/remove, job import).
 - The client inserts rows directly after each mutation succeeds; the Settings page reads the last 50 rows and renders them under **Admin Activity**.
 
+## `003_crew_profiles.sql`
+
+- Adds `crew_type` (`'hs' | 'ewp' | 'chip'`) and `ewp_size` (`'30m' | '36m'`) columns to the `crews` table.
+- The AI Scheduler uses these to route jobs to the right crew: H&S work goes to `crew_type='hs'`, 30m EWP jobs go to a `crew_type='ewp'` crew with `ewp_size='30m'`, and so on.
+- Legacy crews stay `NULL` until an admin fills them in via **Settings → Crew Profiles**. The AI Scheduler shows a blocking banner if any crew is missing a type.
+
+## `004_contracts.sql`
+
+- Creates a `contracts` table (`id UUID`, `name TEXT`, `created_at`).
+- Seeds the existing Highfield contract so it appears in the contract picker immediately.
+- Adds a `create_contract(token, name)` RPC (admin only) that creates a new contract and clones the calling admin into it (same name, same PIN hash).
+
 ## After running migrations
 
 1. Every user's **existing plaintext PIN will still work** — the migration hashes it in place, it doesn't reset it.

@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useContractData } from '../lib/useContractData'
 import { useAuth } from '../lib/useAuth'
-import { supabase, CONTRACT_ID } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { crewColor, feederStyle } from '../lib/feeder'
 
 function Section({ title, subtitle, children }) {
@@ -27,7 +27,7 @@ function Stat({ label, value }) {
 
 export default function Settings() {
   const { jobs, assignments, completions, completionsByJob, crews, addCrew, removeCrew, importJobs, loading } = useContractData()
-  const { users, addUser, updateUser, removeUser } = useAuth()
+  const { users, addUser, updateUser, removeUser, contractId, contractName, createContract } = useAuth()
   const [newCrew, setNewCrew] = useState('')
   const [importStatus, setImportStatus] = useState(null)
   const [importing, setImporting] = useState(false)
@@ -42,13 +42,15 @@ export default function Settings() {
   const [confirmRemove, setConfirmRemove] = useState(null)
   const [auditEntries, setAuditEntries] = useState([])
   const [auditLoading, setAuditLoading] = useState(true)
+  const [newContractName, setNewContractName] = useState('')
+  const [contractStatus, setContractStatus] = useState(null)
 
   async function fetchAudit() {
     setAuditLoading(true)
     const { data, error } = await supabase
       .from('audit_log')
       .select('*')
-      .eq('contract_id', CONTRACT_ID)
+      .eq('contract_id', contractId)
       .order('created_at', { ascending: false })
       .limit(50)
     if (error) console.error('fetchAudit:', error)
@@ -123,6 +125,76 @@ export default function Settings() {
 
   return (
     <div style={{ padding: 16, maxWidth: 720, margin: '0 auto' }} className="space-y-5">
+      {/* Contract Management */}
+      <Section title="Contracts" subtitle={`Current: ${contractName}`}>
+        <form onSubmit={async (e) => {
+          e.preventDefault()
+          if (!newContractName.trim()) return
+          setContractStatus(null)
+          const { id, error } = await createContract(newContractName.trim())
+          if (error) {
+            setContractStatus({ ok: false, msg: error.message || 'Failed to create contract' })
+          } else {
+            setContractStatus({ ok: true, msg: `Created "${newContractName.trim()}". Log out and select it to start working in it.` })
+            setNewContractName('')
+          }
+        }} className="flex gap-2">
+          <input
+            value={newContractName}
+            onChange={e => setNewContractName(e.target.value)}
+            placeholder="New contract name"
+            style={{ flex: 1 }}
+          />
+          <button type="submit" style={btnPrimary}>Create Contract</button>
+        </form>
+        {contractStatus && (
+          <p style={{ fontSize: 13, marginTop: 8, color: contractStatus.ok ? 'var(--apple-green)' : 'var(--apple-red)' }}>
+            {contractStatus.msg}
+          </p>
+        )}
+      </Section>
+
+      {/* Crew Profiles */}
+      <Section title="Crew Profiles" subtitle="Set crew type and EWP size for the AI scheduler">
+        <div className="space-y-2">
+          {crews.map(c => {
+            const color = crewColor(crews, c.name)
+            return (
+              <div key={c.name} className="flex items-center gap-3" style={{ padding: '10px 14px', background: 'var(--apple-bg)', borderRadius: 10, borderLeft: `3px solid ${color}` }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--apple-text)', flex: 1, minWidth: 80 }}>{c.name}</span>
+                <select
+                  value={c.crew_type || ''}
+                  onChange={async (e) => {
+                    const val = e.target.value || null
+                    await supabase.from('crews').update({ crew_type: val, ewp_size: val !== 'ewp' ? null : c.ewp_size }).eq('contract_id', contractId).eq('name', c.name)
+                  }}
+                  style={{ fontSize: 13, padding: '4px 8px', borderRadius: 6 }}
+                >
+                  <option value="">Type…</option>
+                  <option value="hs">H&S</option>
+                  <option value="ewp">EWP</option>
+                  <option value="chip">Chip</option>
+                </select>
+                {c.crew_type === 'ewp' && (
+                  <select
+                    value={c.ewp_size || ''}
+                    onChange={async (e) => {
+                      await supabase.from('crews').update({ ewp_size: e.target.value || null }).eq('contract_id', contractId).eq('name', c.name)
+                    }}
+                    style={{ fontSize: 13, padding: '4px 8px', borderRadius: 6 }}
+                  >
+                    <option value="">Size…</option>
+                    <option value="30m">30m</option>
+                    <option value="36m">36m</option>
+                  </select>
+                )}
+              </div>
+            )
+          })}
+          {crews.length === 0 && <p style={{ fontSize: 13, color: 'var(--apple-tertiary)', textAlign: 'center', padding: 8 }}>Add crews below first</p>}
+        </div>
+      </Section>
+
       {/* User Management */}
       <Section title="User Management" subtitle="Manage logins and roles">
         <div className="space-y-2" style={{ marginBottom: 16 }}>

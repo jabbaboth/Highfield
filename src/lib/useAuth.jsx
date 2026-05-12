@@ -1,42 +1,74 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
-import { supabase, CONTRACT_ID } from './supabase'
+import { supabase } from './supabase'
 
 const AuthContext = createContext(null)
-const STORAGE_KEY = 'hf_session'
-const IDLE_MS = 60 * 1000          // poll expiry every 60s
-const TOUCH_THROTTLE_MS = 60 * 1000 // extend session at most once per minute
+const SESSION_KEY = 'hf_session'
+const CONTRACT_KEY = 'hf_contract_id'
+const IDLE_MS = 60 * 1000
+const TOUCH_THROTTLE_MS = 60 * 1000
 
 function readStoredSession() {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const raw = sessionStorage.getItem(SESSION_KEY)
     return raw ? JSON.parse(raw) : null
   } catch { return null }
 }
 
+function readStoredContractId() {
+  return sessionStorage.getItem(CONTRACT_KEY) || null
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(readStoredSession)
+  const [contractId, setContractIdRaw] = useState(readStoredContractId)
+  const [contracts, setContracts] = useState([])
   const [users, setUsers] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [bootstrapping, setBootstrapping] = useState(() => !!readStoredSession())
   const lastTouchRef = useRef(0)
 
-  // Users list (for the PIN screen dropdown and Settings page).
-  // Reads from users_public view — no pin_hash exposed.
+  // ─── contracts ───────────────────────────────────────────────────────
+
+  const fetchContracts = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('contracts')
+      .select('*')
+      .order('name')
+    if (error) console.error('fetchContracts:', error)
+    if (data) setContracts(data)
+  }, [])
+
+  useEffect(() => { fetchContracts() }, [fetchContracts])
+
+  function selectContract(id) {
+    sessionStorage.setItem(CONTRACT_KEY, id)
+    setContractIdRaw(id)
+  }
+
+  function clearContract() {
+    sessionStorage.removeItem(CONTRACT_KEY)
+    setContractIdRaw(null)
+    setUsers([])
+  }
+
+  // ─── users (scoped to selected contract) ─────────────────────────────
+
   const fetchUsers = useCallback(async () => {
+    if (!contractId) { setUsers([]); setLoadingUsers(false); return }
     const { data, error } = await supabase
       .from('users_public')
       .select('*')
-      .eq('contract_id', CONTRACT_ID)
+      .eq('contract_id', contractId)
       .order('name')
     if (error) console.error('fetchUsers:', error)
     if (data) setUsers(data)
     setLoadingUsers(false)
-  }, [])
+  }, [contractId])
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
 
-  // Validate stored session on mount. If whoami() rejects the token,
-  // clear the local state (forged or expired session).
+  // ─── session bootstrap ───────────────────────────────────────────────
+
   useEffect(() => {
     const stored = readStoredSession()
     if (!stored?.token) {
@@ -48,7 +80,7 @@ export function AuthProvider({ children }) {
       const { data, error } = await supabase.rpc('whoami', { p_token: stored.token })
       if (cancelled) return
       if (error || !data || data.length === 0) {
-        sessionStorage.removeItem(STORAGE_KEY)
+        sessionStorage.removeItem(SESSION_KEY)
         setSession(null)
       } else {
         const row = data[0]
@@ -59,27 +91,32 @@ export function AuthProvider({ children }) {
           role: row.role,
           expires_at: row.expires_at,
         }
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(fresh))
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh))
         setSession(fresh)
+        if (row.contract_id && !readStoredContractId()) {
+          selectContract(row.contract_id)
+        }
       }
       setBootstrapping(false)
     })()
     return () => { cancelled = true }
   }, [])
 
-  // Poll for expiry every IDLE_MS. When expires_at has passed, log out.
+  // ─── expiry polling ──────────────────────────────────────────────────
+
   useEffect(() => {
     if (!session?.expires_at) return
     const interval = setInterval(() => {
       if (new Date(session.expires_at).getTime() <= Date.now()) {
-        sessionStorage.removeItem(STORAGE_KEY)
+        sessionStorage.removeItem(SESSION_KEY)
         setSession(null)
       }
     }, IDLE_MS)
     return () => clearInterval(interval)
   }, [session])
 
-  // Extend the session on user activity, throttled.
+  // ─── idle touch ──────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!session?.token) return
     async function onActivity() {
@@ -91,7 +128,7 @@ export function AuthProvider({ children }) {
         setSession(prev => {
           if (!prev) return prev
           const next = { ...prev, expires_at: data }
-          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify(next))
           return next
         })
       }
@@ -106,8 +143,8 @@ export function AuthProvider({ children }) {
     }
   }, [session?.token])
 
-  // Log in by calling verify_pin RPC.
-  // Returns { ok: true } on success, { ok: false, error: 'wrong' | 'locked' }
+  // ─── login / logout ──────────────────────────────────────────────────
+
   async function login(userId, pin) {
     const { data, error } = await supabase.rpc('verify_pin', {
       p_user_id: userId,
@@ -127,25 +164,29 @@ export function AuthProvider({ children }) {
       role: row.role,
       expires_at: row.expires_at,
     }
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(fresh))
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh))
     setSession(fresh)
     return { ok: true }
   }
 
   async function logout() {
     const token = session?.token
-    sessionStorage.removeItem(STORAGE_KEY)
+    sessionStorage.removeItem(SESSION_KEY)
+    sessionStorage.removeItem(CONTRACT_KEY)
     setSession(null)
+    setContractIdRaw(null)
     if (token) {
       await supabase.rpc('logout', { p_token: token })
     }
   }
 
-  // Best-effort audit log insert; never blocks the primary mutation.
+  // ─── audit helper ────────────────────────────────────────────────────
+
   async function auditLog(action, entityType, entityId, payload = {}) {
+    if (!contractId) return
     try {
       await supabase.from('audit_log').insert({
-        contract_id: CONTRACT_ID,
+        contract_id: contractId,
         actor_id: session?.id || null,
         actor_name: session?.name || null,
         action,
@@ -157,6 +198,8 @@ export function AuthProvider({ children }) {
       console.warn('audit_log insert failed:', err)
     }
   }
+
+  // ─── user management RPCs ────────────────────────────────────────────
 
   async function addUser(name, pin, role) {
     const { data, error } = await supabase.rpc('create_user', {
@@ -205,12 +248,29 @@ export function AuthProvider({ children }) {
     return error
   }
 
-  // Expose `user` as the session object for backward compatibility with existing code.
+  // ─── contract creation ───────────────────────────────────────────────
+
+  async function createContract(name) {
+    const { data, error } = await supabase.rpc('create_contract', {
+      p_token: session?.token, p_name: name,
+    })
+    if (!error) {
+      await fetchContracts()
+      await auditLog('contract.create', 'contract', data, { name })
+    }
+    return { id: data, error }
+  }
+
+  // ─── expose context ──────────────────────────────────────────────────
+
   const user = session ? { id: session.id, name: session.name, role: session.role } : null
+  const contractName = contracts.find(c => c.id === contractId)?.name || ''
 
   return (
     <AuthContext.Provider value={{
       user, users, loadingUsers, bootstrapping,
+      contractId, contractName, contracts,
+      selectContract, clearContract, createContract,
       login, logout, fetchUsers,
       addUser, updateUser, removeUser, auditLog,
     }}>

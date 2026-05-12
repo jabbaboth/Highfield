@@ -1,17 +1,18 @@
 import { useEffect } from 'react'
-import { supabase, CONTRACT_ID } from './supabase'
+import { supabase } from './supabase'
 
-export function useRealtimeTable(table, onChange) {
+export function useRealtimeTable(table, onChange, contractId) {
   useEffect(() => {
+    if (!contractId) return
     const channel = supabase
-      .channel(`${table}-changes`)
+      .channel(`${table}-${contractId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table,
-          filter: `contract_id=eq.${CONTRACT_ID}`,
+          filter: `contract_id=eq.${contractId}`,
         },
         () => {
           onChange()
@@ -22,5 +23,5 @@ export function useRealtimeTable(table, onChange) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [table, onChange])
+  }, [table, onChange, contractId])
 }

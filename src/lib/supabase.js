@@ -4,4 +4,4 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
-export const CONTRACT_ID = import.meta.env.VITE_CONTRACT_ID
+export const DEFAULT_CONTRACT_ID = import.meta.env.VITE_CONTRACT_ID

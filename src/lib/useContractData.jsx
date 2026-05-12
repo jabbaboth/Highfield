@@ -1,13 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { supabase, CONTRACT_ID } from './supabase'
+import { supabase } from './supabase'
 import { useRealtimeTable } from './useRealtimeTable'
 import { useAuth } from './useAuth'
 
 const ContractDataContext = createContext(null)
 
 export function ContractDataProvider({ children }) {
-  const { auditLog } = useAuth()
-  const value = useContractDataInternal(auditLog)
+  const { auditLog, contractId } = useAuth()
+  const value = useContractDataInternal(auditLog, contractId)
   return (
     <ContractDataContext.Provider value={value}>
       {children}
@@ -21,8 +21,8 @@ export function useContractData() {
   return ctx
 }
 
-function useContractDataInternal(auditLog) {
-  const audit = auditLog || (async () => {}) // no-op fallback
+function useContractDataInternal(auditLog, contractId) {
+  const audit = auditLog || (async () => {})
   const [jobs, setJobs] = useState([])
   const [assignments, setAssignments] = useState([])
   const [completions, setCompletions] = useState([])
@@ -30,43 +30,48 @@ function useContractDataInternal(auditLog) {
   const [loading, setLoading] = useState(true)
 
   const fetchJobs = useCallback(async () => {
-    const { data, error } = await supabase.from('jobs').select('*').eq('contract_id', CONTRACT_ID)
+    if (!contractId) return
+    const { data, error } = await supabase.from('jobs').select('*').eq('contract_id', contractId)
     if (error) console.error('fetchJobs:', error)
     if (data) setJobs(data)
-  }, [])
+  }, [contractId])
 
   const fetchAssignments = useCallback(async () => {
-    const { data, error } = await supabase.from('assignments').select('*').eq('contract_id', CONTRACT_ID)
+    if (!contractId) return
+    const { data, error } = await supabase.from('assignments').select('*').eq('contract_id', contractId)
     if (error) console.error('fetchAssignments:', error)
     if (data) setAssignments(data)
-  }, [])
+  }, [contractId])
 
   const fetchCompletions = useCallback(async () => {
-    const { data, error } = await supabase.from('completions').select('*').eq('contract_id', CONTRACT_ID)
+    if (!contractId) return
+    const { data, error } = await supabase.from('completions').select('*').eq('contract_id', contractId)
     if (error) console.error('fetchCompletions:', error)
     if (data) setCompletions(data)
-  }, [])
+  }, [contractId])
 
   const fetchCrews = useCallback(async () => {
-    const { data, error } = await supabase.from('crews').select('*').eq('contract_id', CONTRACT_ID)
+    if (!contractId) return
+    const { data, error } = await supabase.from('crews').select('*').eq('contract_id', contractId)
     if (error) console.error('fetchCrews:', error)
     if (data) setCrews(data)
-  }, [])
+  }, [contractId])
 
   useEffect(() => {
+    if (!contractId) { setLoading(false); return }
+    setLoading(true)
     Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews()])
       .finally(() => setLoading(false))
-  }, [fetchJobs, fetchAssignments, fetchCompletions, fetchCrews])
+  }, [fetchJobs, fetchAssignments, fetchCompletions, fetchCrews, contractId])
 
-  useRealtimeTable('assignments', fetchAssignments)
-  useRealtimeTable('completions', fetchCompletions)
-  useRealtimeTable('jobs', fetchJobs)
-  useRealtimeTable('crews', fetchCrews)
+  useRealtimeTable('assignments', fetchAssignments, contractId)
+  useRealtimeTable('completions', fetchCompletions, contractId)
+  useRealtimeTable('jobs', fetchJobs, contractId)
+  useRealtimeTable('crews', fetchCrews, contractId)
 
-  // Multi-phase assign: phase = 'main' | 'bucket' | 'chip'
   const assignJobs = async (jobIds, crewName, plannedDate, phase = 'main', assignedByName = '') => {
     const rows = jobIds.map(job_id => ({
-      contract_id: CONTRACT_ID,
+      contract_id: contractId,
       job_id: Number(job_id),
       crew_name: crewName,
       planned_date: plannedDate,
@@ -85,7 +90,7 @@ function useContractDataInternal(auditLog) {
   const bulkAssign = async (rows, assignedByName = '') => {
     if (!rows?.length) return null
     const shaped = rows.map(r => ({
-      contract_id: CONTRACT_ID,
+      contract_id: contractId,
       job_id: Number(r.job_id),
       crew_name: r.crew_name,
       planned_date: r.planned_date,
@@ -107,7 +112,7 @@ function useContractDataInternal(auditLog) {
     const { error } = await supabase
       .from('assignments')
       .delete()
-      .eq('contract_id', CONTRACT_ID)
+      .eq('contract_id', contractId)
       .eq('job_id', Number(jobId))
       .eq('phase', phase)
     if (error) console.error('unassignJob:', error)
@@ -117,7 +122,7 @@ function useContractDataInternal(auditLog) {
 
   const completeJob = async (jobId, phase = 'main', completedByUserId = null, completedByName = '', notes = '') => {
     const row = {
-      contract_id: CONTRACT_ID,
+      contract_id: contractId,
       job_id: Number(jobId),
       phase,
       completed_at: new Date().toISOString(),
@@ -137,7 +142,7 @@ function useContractDataInternal(auditLog) {
     const { error } = await supabase
       .from('completions')
       .delete()
-      .eq('contract_id', CONTRACT_ID)
+      .eq('contract_id', contractId)
       .eq('job_id', Number(jobId))
       .eq('phase', phase)
     if (error) console.error('uncompleteJob:', error)
@@ -146,7 +151,7 @@ function useContractDataInternal(auditLog) {
   }
 
   const addCrew = async (name) => {
-    const { error } = await supabase.from('crews').insert({ contract_id: CONTRACT_ID, name })
+    const { error } = await supabase.from('crews').insert({ contract_id: contractId, name })
     if (!error) {
       await fetchCrews()
       await audit('crew.create', 'crew', name, { name })
@@ -155,7 +160,7 @@ function useContractDataInternal(auditLog) {
   }
 
   const removeCrew = async (name) => {
-    const { error } = await supabase.from('crews').delete().eq('contract_id', CONTRACT_ID).eq('name', name)
+    const { error } = await supabase.from('crews').delete().eq('contract_id', contractId).eq('name', name)
     if (!error) {
       await fetchCrews()
       await audit('crew.delete', 'crew', name, { name })
@@ -164,10 +169,10 @@ function useContractDataInternal(auditLog) {
   }
 
   const importJobs = async (jobsArray) => {
-    await supabase.from('jobs').delete().eq('contract_id', CONTRACT_ID)
+    await supabase.from('jobs').delete().eq('contract_id', contractId)
     const rows = jobsArray.map(j => {
       const { assigned_crew, assigned_date, completed, house_no, location, ht, cleanup, ...rest } = j
-      return { ...rest, contract_id: CONTRACT_ID }
+      return { ...rest, contract_id: contractId }
     })
     const errors = []
     for (let i = 0; i < rows.length; i += 100) {
@@ -179,8 +184,6 @@ function useContractDataInternal(auditLog) {
     return errors.length ? errors : null
   }
 
-  // Build phase-aware lookup maps
-  // assignmentsByJob[jobId] = { main: assignment, bucket: assignment, chip: assignment }
   const assignmentsByJob = {}
   assignments.forEach(a => {
     const jid = String(a.job_id)
