@@ -189,6 +189,10 @@ export default function Settings() {
                     <option value="">Size…</option>
                     <option value="30m">30m</option>
                     <option value="36m">36m</option>
+                    <option value="316">316</option>
+                    <option value="317">317</option>
+                    <option value="322">322</option>
+                    <option value="323">323</option>
                   </select>
                 )}
               </div>
@@ -388,6 +392,10 @@ export default function Settings() {
               <option value="">Size…</option>
               <option value="30m">30m</option>
               <option value="36m">36m</option>
+              <option value="316">316</option>
+              <option value="317">317</option>
+              <option value="322">322</option>
+              <option value="323">323</option>
             </select>
           )}
           <button type="submit" style={btnPrimary}>Add</button>
