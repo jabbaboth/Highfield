@@ -82,6 +82,27 @@ function useContractDataInternal(auditLog) {
     return null
   }
 
+  const bulkAssign = async (rows, assignedByName = '') => {
+    if (!rows?.length) return null
+    const shaped = rows.map(r => ({
+      contract_id: CONTRACT_ID,
+      job_id: Number(r.job_id),
+      crew_name: r.crew_name,
+      planned_date: r.planned_date,
+      phase: r.phase || 'main',
+      assigned_by_name: assignedByName,
+    }))
+    for (let i = 0; i < shaped.length; i += 200) {
+      const { error } = await supabase
+        .from('assignments')
+        .upsert(shaped.slice(i, i + 200), { onConflict: 'contract_id,job_id,phase' })
+      if (error) { console.error('bulkAssign:', error); return error }
+    }
+    await fetchAssignments()
+    await audit('schedule.bulk', 'assignments', null, { count: shaped.length })
+    return null
+  }
+
   const unassignJob = async (jobId, phase = 'main') => {
     const { error } = await supabase
       .from('assignments')
@@ -177,7 +198,7 @@ function useContractDataInternal(auditLog) {
   return {
     jobs, assignments, completions, crews, loading,
     assignmentsByJob, completionsByJob,
-    assignJobs, unassignJob, completeJob, uncompleteJob,
+    assignJobs, bulkAssign, unassignJob, completeJob, uncompleteJob,
     addCrew, removeCrew, importJobs,
     refresh: () => Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews()]),
   }
