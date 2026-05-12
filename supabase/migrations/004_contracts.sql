@@ -45,6 +45,12 @@ BEGIN
   INSERT INTO users (contract_id, name, pin_hash, role)
     VALUES (new_contract_id, caller.name, caller.pin_hash, 'admin');
 
+  -- Clone crews from the admin's current contract
+  INSERT INTO crews (contract_id, name, crew_type, ewp_size)
+    SELECT new_contract_id, c.name, c.crew_type, c.ewp_size
+      FROM crews c
+      WHERE c.contract_id = caller.contract_id;
+
   RETURN new_contract_id;
 END $$;
 

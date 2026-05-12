@@ -29,6 +29,8 @@ export default function Settings() {
   const { jobs, assignments, completions, completionsByJob, crews, addCrew, removeCrew, importJobs, loading } = useContractData()
   const { users, addUser, updateUser, removeUser, contractId, contractName, createContract } = useAuth()
   const [newCrew, setNewCrew] = useState('')
+  const [newCrewType, setNewCrewType] = useState('hs')
+  const [newCrewEwpSize, setNewCrewEwpSize] = useState('')
   const [importStatus, setImportStatus] = useState(null)
   const [importing, setImporting] = useState(false)
   const fileRef = useRef()
@@ -77,7 +79,8 @@ export default function Settings() {
 
   async function handleAddCrew(e) {
     e.preventDefault(); if (!newCrew.trim()) return
-    await addCrew(newCrew.trim()); setNewCrew('')
+    await addCrew(newCrew.trim(), newCrewType || null, newCrewType === 'ewp' ? (newCrewEwpSize || null) : null)
+    setNewCrew(''); setNewCrewType('hs'); setNewCrewEwpSize('')
   }
   async function handleAddUser(e) {
     e.preventDefault(); if (!newUserName.trim() || !newUserPin.trim()) return
@@ -359,15 +362,34 @@ export default function Settings() {
             const color = crewColor(crews, c.name)
             return (
               <div key={c.name} className="flex items-center justify-between" style={{ padding: '10px 14px', background: 'var(--apple-bg)', borderRadius: 10, borderLeft: `3px solid ${color}` }}>
-                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--apple-text)' }}>{c.name}</span>
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--apple-text)' }}>{c.name}</span>
+                  {c.crew_type && (
+                    <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: '#e8f4fd', color: '#0071e3', textTransform: 'uppercase' }}>
+                      {c.crew_type}{c.ewp_size ? ` ${c.ewp_size}` : ''}
+                    </span>
+                  )}
+                </div>
                 <button onClick={() => removeCrew(c.name)} style={btnDanger}>Remove</button>
               </div>
             )
           })}
           {crews.length === 0 && <p style={{ fontSize: 13, color: 'var(--apple-tertiary)', textAlign: 'center', padding: 8 }}>No crews added yet</p>}
         </div>
-        <form onSubmit={handleAddCrew} className="flex gap-2">
-          <input value={newCrew} onChange={e => setNewCrew(e.target.value)} placeholder="New crew name" style={{ flex: 1 }} />
+        <form onSubmit={handleAddCrew} className="flex flex-wrap gap-2">
+          <input value={newCrew} onChange={e => setNewCrew(e.target.value)} placeholder="New crew name" style={{ flex: 1, minWidth: 120 }} />
+          <select value={newCrewType} onChange={e => { setNewCrewType(e.target.value); if (e.target.value !== 'ewp') setNewCrewEwpSize('') }}>
+            <option value="hs">H&S</option>
+            <option value="ewp">EWP</option>
+            <option value="chip">Chip</option>
+          </select>
+          {newCrewType === 'ewp' && (
+            <select value={newCrewEwpSize} onChange={e => setNewCrewEwpSize(e.target.value)}>
+              <option value="">Size…</option>
+              <option value="30m">30m</option>
+              <option value="36m">36m</option>
+            </select>
+          )}
           <button type="submit" style={btnPrimary}>Add</button>
         </form>
       </Section>

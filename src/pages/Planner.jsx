@@ -123,10 +123,12 @@ export default function Planner() {
     return match?.name || null
   }, [role, crews, user])
 
+  const phaseCrewType = activePhase === 'main' ? 'hs' : activePhase === 'bucket' ? 'ewp' : 'chip'
+
   const visibleCrews = useMemo(() => {
     if (role === 'crew' && userCrewName) return crews.filter(c => c.name === userCrewName)
-    return crews
-  }, [role, userCrewName, crews])
+    return crews.filter(c => !c.crew_type || c.crew_type === phaseCrewType)
+  }, [role, userCrewName, crews, phaseCrewType])
 
   // Sensors: pointer + touch with 150ms delay
   const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })

@@ -150,11 +150,14 @@ function useContractDataInternal(auditLog, contractId) {
     return error
   }
 
-  const addCrew = async (name) => {
-    const { error } = await supabase.from('crews').insert({ contract_id: contractId, name })
+  const addCrew = async (name, crewType = null, ewpSize = null) => {
+    const row = { contract_id: contractId, name }
+    if (crewType) row.crew_type = crewType
+    if (ewpSize) row.ewp_size = ewpSize
+    const { error } = await supabase.from('crews').insert(row)
     if (!error) {
       await fetchCrews()
-      await audit('crew.create', 'crew', name, { name })
+      await audit('crew.create', 'crew', name, { name, crew_type: crewType })
     }
     return error
   }
