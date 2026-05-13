@@ -4,6 +4,7 @@ import { useAuth } from '../lib/useAuth'
 const allTabs = [
   { to: '/jobs', label: 'Jobs', roles: ['admin', 'foreman'] },
   { to: '/planner', label: 'Planner', roles: ['admin', 'foreman', 'crew'] },
+  { to: '/work-authorities', label: 'WAs', roles: ['admin', 'foreman', 'crew'] },
   { to: '/progress', label: 'Progress', roles: ['admin', 'foreman'] },
   { to: '/settings', label: 'Settings', roles: ['admin'] },
 ]

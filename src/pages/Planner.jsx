@@ -51,15 +51,15 @@ function DroppableZone({ id, isOver, children }) {
 }
 
 // Job tile card for planner
-function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign }) {
+function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign, noWaCoverage }) {
   const fs = feederStyle(job.feeder)
   return (
     <div
       style={{
-        background: 'var(--apple-bg)',
+        background: noWaCoverage ? '#fff8f0' : 'var(--apple-bg)',
         borderRadius: 8,
         padding: '8px 10px',
-        border: '1px solid rgba(0,0,0,0.06)',
+        border: noWaCoverage ? '1px solid #f0ad4e40' : '1px solid rgba(0,0,0,0.06)',
         opacity: isComplete ? 0.5 : 1,
         cursor: 'grab',
       }}
@@ -74,6 +74,7 @@ function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign
             <span>{job.spans || 0} spans</span>
             <span>{parseFloat(job[phaseInfo.hrsField]) || 0}h</span>
             {job.tm_type && <span style={{ color: '#c0392b' }}>{job.tm_type}</span>}
+            {noWaCoverage && <span title="No work authority for this feeder on this date" style={{ color: '#f0ad4e', fontWeight: 600 }}>No WA</span>}
           </div>
         </div>
         <div className="flex gap-1">
@@ -106,7 +107,7 @@ function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign
 }
 
 export default function Planner() {
-  const { jobs, assignments, assignmentsByJob, completionsByJob, crews, assignJobs, unassignJob, completeJob, loading } = useContractData()
+  const { jobs, assignments, assignmentsByJob, completionsByJob, crews, workAuthorities, assignJobs, unassignJob, completeJob, loading } = useContractData()
   const { user } = useAuth()
   const role = user?.role || 'crew'
   const [date, setDate] = useState(() => formatDate(new Date()))
@@ -129,6 +130,14 @@ export default function Planner() {
     if (role === 'crew' && userCrewName) return crews.filter(c => c.name === userCrewName)
     return crews.filter(c => !c.crew_type || c.crew_type === phaseCrewType)
   }, [role, userCrewName, crews, phaseCrewType])
+
+  const waCoveredFeeders = useMemo(() => {
+    const set = new Set()
+    workAuthorities.forEach(wa => {
+      if ((wa.dates || []).includes(date)) set.add(String(wa.feeder))
+    })
+    return set
+  }, [workAuthorities, date])
 
   // Sensors: pointer + touch with 150ms delay
   const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -302,6 +311,7 @@ export default function Planner() {
                               onComplete={() => completeJob(job.job_id, activePhase, user?.id, user?.name)}
                               onUnassign={() => unassignJob(job.job_id, activePhase)}
                               canAssign={canAssign}
+                              noWaCoverage={!waCoveredFeeders.has(String(job.feeder))}
                             />
                           </DraggableJob>
                         )
@@ -329,6 +339,7 @@ export default function Planner() {
                       <JobTile
                         job={job} phaseInfo={phaseInfo} isComplete={false}
                         canAssign={false}
+                        noWaCoverage={!waCoveredFeeders.has(String(job.feeder))}
                       />
                     </DraggableJob>
                   ))}

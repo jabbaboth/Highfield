@@ -27,6 +27,7 @@ function useContractDataInternal(auditLog, contractId) {
   const [assignments, setAssignments] = useState([])
   const [completions, setCompletions] = useState([])
   const [crews, setCrews] = useState([])
+  const [workAuthorities, setWorkAuthorities] = useState([])
   const [loading, setLoading] = useState(true)
 
   const fetchJobs = useCallback(async () => {
@@ -57,17 +58,25 @@ function useContractDataInternal(auditLog, contractId) {
     if (data) setCrews(data)
   }, [contractId])
 
+  const fetchWorkAuthorities = useCallback(async () => {
+    if (!contractId) return
+    const { data, error } = await supabase.from('work_authorities').select('*').eq('contract_id', contractId)
+    if (error) console.error('fetchWorkAuthorities:', error)
+    if (data) setWorkAuthorities(data)
+  }, [contractId])
+
   useEffect(() => {
     if (!contractId) { setLoading(false); return }
     setLoading(true)
-    Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews()])
+    Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews(), fetchWorkAuthorities()])
       .finally(() => setLoading(false))
-  }, [fetchJobs, fetchAssignments, fetchCompletions, fetchCrews, contractId])
+  }, [fetchJobs, fetchAssignments, fetchCompletions, fetchCrews, fetchWorkAuthorities, contractId])
 
   useRealtimeTable('assignments', fetchAssignments, contractId)
   useRealtimeTable('completions', fetchCompletions, contractId)
   useRealtimeTable('jobs', fetchJobs, contractId)
   useRealtimeTable('crews', fetchCrews, contractId)
+  useRealtimeTable('work_authorities', fetchWorkAuthorities, contractId)
 
   const assignJobs = async (jobIds, crewName, plannedDate, phase = 'main', assignedByName = '') => {
     const rows = jobIds.map(job_id => ({
@@ -171,6 +180,36 @@ function useContractDataInternal(auditLog, contractId) {
     return error
   }
 
+  const addWorkAuthority = async (waNumber, feeder, dates, pdfPath = null, notes = '') => {
+    const row = { contract_id: contractId, wa_number: waNumber, feeder, dates, notes }
+    if (pdfPath) row.pdf_path = pdfPath
+    const { error } = await supabase.from('work_authorities').insert(row)
+    if (!error) {
+      await fetchWorkAuthorities()
+      await audit('wa.create', 'work_authority', waNumber, { feeder, date_count: dates.length })
+    }
+    return error
+  }
+
+  const removeWorkAuthority = async (id) => {
+    const wa = workAuthorities.find(w => w.id === id)
+    if (wa?.pdf_path) {
+      await supabase.storage.from('work-authorities').remove([wa.pdf_path])
+    }
+    const { error } = await supabase.from('work_authorities').delete().eq('id', id).eq('contract_id', contractId)
+    if (!error) {
+      await fetchWorkAuthorities()
+      await audit('wa.delete', 'work_authority', wa?.wa_number || id, {})
+    }
+    return error
+  }
+
+  const updateWorkAuthority = async (id, updates) => {
+    const { error } = await supabase.from('work_authorities').update(updates).eq('id', id).eq('contract_id', contractId)
+    if (!error) await fetchWorkAuthorities()
+    return error
+  }
+
   const importJobs = async (jobsArray) => {
     await supabase.from('jobs').delete().eq('contract_id', contractId)
     const rows = jobsArray.map(j => {
@@ -202,10 +241,11 @@ function useContractDataInternal(auditLog, contractId) {
   })
 
   return {
-    jobs, assignments, completions, crews, loading,
+    jobs, assignments, completions, crews, workAuthorities, loading,
     assignmentsByJob, completionsByJob,
     assignJobs, bulkAssign, unassignJob, completeJob, uncompleteJob,
     addCrew, removeCrew, importJobs,
-    refresh: () => Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews()]),
+    addWorkAuthority, removeWorkAuthority, updateWorkAuthority,
+    refresh: () => Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews(), fetchWorkAuthorities()]),
   }
 }
