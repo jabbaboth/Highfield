@@ -21,6 +21,22 @@ export function useContractData() {
   return ctx
 }
 
+export function parseNotify(str) {
+  if (!str) return null
+  const m = str.match(/(call|txt|text)\s+(\d+)\s+day/i)
+  if (!m) return null
+  return {
+    method: m[1].toLowerCase().startsWith('call') ? 'call' : 'text',
+    days: parseInt(m[2], 10),
+  }
+}
+
+function subtractDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() - n)
+  return d.toISOString().split('T')[0]
+}
+
 function useContractDataInternal(auditLog, contractId) {
   const audit = auditLog || (async () => {})
   const [jobs, setJobs] = useState([])
@@ -28,6 +44,7 @@ function useContractDataInternal(auditLog, contractId) {
   const [completions, setCompletions] = useState([])
   const [crews, setCrews] = useState([])
   const [workAuthorities, setWorkAuthorities] = useState([])
+  const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
 
   const fetchJobs = useCallback(async () => {
@@ -65,18 +82,46 @@ function useContractDataInternal(auditLog, contractId) {
     if (data) setWorkAuthorities(data)
   }, [contractId])
 
+  const fetchNotifications = useCallback(async () => {
+    if (!contractId) return
+    const { data, error } = await supabase.from('notifications').select('*').eq('contract_id', contractId)
+    if (error) console.error('fetchNotifications:', error)
+    if (data) setNotifications(data)
+  }, [contractId])
+
   useEffect(() => {
     if (!contractId) { setLoading(false); return }
     setLoading(true)
-    Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews(), fetchWorkAuthorities()])
+    Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews(), fetchWorkAuthorities(), fetchNotifications()])
       .finally(() => setLoading(false))
-  }, [fetchJobs, fetchAssignments, fetchCompletions, fetchCrews, fetchWorkAuthorities, contractId])
+  }, [fetchJobs, fetchAssignments, fetchCompletions, fetchCrews, fetchWorkAuthorities, fetchNotifications, contractId])
 
   useRealtimeTable('assignments', fetchAssignments, contractId)
   useRealtimeTable('completions', fetchCompletions, contractId)
   useRealtimeTable('jobs', fetchJobs, contractId)
   useRealtimeTable('crews', fetchCrews, contractId)
   useRealtimeTable('work_authorities', fetchWorkAuthorities, contractId)
+  useRealtimeTable('notifications', fetchNotifications, contractId)
+
+  const syncNotifications = async (jobIds, plannedDate) => {
+    const notifyRows = []
+    for (const jobId of jobIds) {
+      const job = jobs.find(j => j.job_id === Number(jobId))
+      if (!job?.notify) continue
+      const parsed = parseNotify(job.notify)
+      if (!parsed) continue
+      notifyRows.push({
+        contract_id: contractId,
+        job_id: Number(jobId),
+        notify_type: parsed.method,
+        notify_date: subtractDays(plannedDate, parsed.days),
+      })
+    }
+    if (notifyRows.length > 0) {
+      await supabase.from('notifications').upsert(notifyRows, { onConflict: 'contract_id,job_id' })
+      await fetchNotifications()
+    }
+  }
 
   const assignJobs = async (jobIds, crewName, plannedDate, phase = 'main', assignedByName = '') => {
     const rows = jobIds.map(job_id => ({
@@ -93,6 +138,7 @@ function useContractDataInternal(auditLog, contractId) {
       .select()
     if (error) { console.error('assignJobs:', error); return error }
     await fetchAssignments()
+    await syncNotifications(jobIds, plannedDate)
     return null
   }
 
@@ -113,6 +159,14 @@ function useContractDataInternal(auditLog, contractId) {
       if (error) { console.error('bulkAssign:', error); return error }
     }
     await fetchAssignments()
+    const byDate = {}
+    shaped.forEach(r => {
+      if (!byDate[r.planned_date]) byDate[r.planned_date] = []
+      byDate[r.planned_date].push(r.job_id)
+    })
+    for (const [pd, ids] of Object.entries(byDate)) {
+      await syncNotifications(ids, pd)
+    }
     await audit('schedule.bulk', 'assignments', null, { count: shaped.length })
     return null
   }
@@ -210,6 +264,18 @@ function useContractDataInternal(auditLog, contractId) {
     return error
   }
 
+  const markContacted = async (notificationId, contactMethod, contactedByName, notes = '') => {
+    const { error } = await supabase.from('notifications').update({
+      contacted: true,
+      contacted_at: new Date().toISOString(),
+      contacted_by: contactedByName,
+      contact_method: contactMethod,
+      notes: notes || null,
+    }).eq('id', notificationId).eq('contract_id', contractId)
+    if (!error) await fetchNotifications()
+    return error
+  }
+
   const importJobs = async (jobsArray) => {
     await supabase.from('jobs').delete().eq('contract_id', contractId)
     const rows = jobsArray.map(j => {
@@ -241,11 +307,12 @@ function useContractDataInternal(auditLog, contractId) {
   })
 
   return {
-    jobs, assignments, completions, crews, workAuthorities, loading,
+    jobs, assignments, completions, crews, workAuthorities, notifications, loading,
     assignmentsByJob, completionsByJob,
     assignJobs, bulkAssign, unassignJob, completeJob, uncompleteJob,
     addCrew, removeCrew, importJobs,
     addWorkAuthority, removeWorkAuthority, updateWorkAuthority,
-    refresh: () => Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews(), fetchWorkAuthorities()]),
+    markContacted,
+    refresh: () => Promise.all([fetchJobs(), fetchAssignments(), fetchCompletions(), fetchCrews(), fetchWorkAuthorities(), fetchNotifications()]),
   }
 }

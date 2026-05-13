@@ -1,10 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../lib/useAuth'
+import NotificationBell from './NotificationBell'
 
 const allTabs = [
   { to: '/jobs', label: 'Jobs', roles: ['admin', 'foreman'] },
   { to: '/planner', label: 'Planner', roles: ['admin', 'foreman', 'crew'] },
   { to: '/work-authorities', label: 'WAs', roles: ['admin', 'foreman', 'crew'] },
+  { to: '/notifications', label: 'Notifs', roles: ['admin', 'foreman'] },
   { to: '/progress', label: 'Progress', roles: ['admin', 'foreman'] },
   { to: '/settings', label: 'Settings', roles: ['admin'] },
 ]
@@ -41,6 +43,7 @@ export default function Layout({ children }) {
               <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--apple-text)' }}>{user?.name}</p>
               <p style={{ fontSize: '11px', color: 'var(--apple-tertiary)', textTransform: 'capitalize' }}>{role}</p>
             </div>
+            {(role === 'admin' || role === 'foreman') && <NotificationBell />}
             {/* Avatar circle */}
             <div
               className="flex items-center justify-center"

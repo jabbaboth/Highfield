@@ -4,6 +4,7 @@ import {
   useSensor, useSensors, closestCenter,
 } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
+import { Link } from 'react-router-dom'
 import { useContractData } from '../lib/useContractData'
 import { useAuth } from '../lib/useAuth'
 import { feederStyle, PHASES, crewColor } from '../lib/feeder'
@@ -107,7 +108,7 @@ function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign
 }
 
 export default function Planner() {
-  const { jobs, assignments, assignmentsByJob, completionsByJob, crews, workAuthorities, assignJobs, unassignJob, completeJob, loading } = useContractData()
+  const { jobs, assignments, assignmentsByJob, completionsByJob, crews, workAuthorities, notifications, assignJobs, unassignJob, completeJob, loading } = useContractData()
   const { user } = useAuth()
   const role = user?.role || 'crew'
   const [date, setDate] = useState(() => formatDate(new Date()))
@@ -225,11 +226,32 @@ export default function Planner() {
   function prevDay() { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() - 1); setDate(formatDate(d)) }
   function nextDay() { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + 1); setDate(formatDate(d)) }
 
+  const todayStr = formatDate(new Date())
+  const dueNotifCount = useMemo(() =>
+    notifications.filter(n => !n.contacted && n.notify_date && n.notify_date <= todayStr).length,
+    [notifications, todayStr]
+  )
+
   if (loading) return <div style={{ padding: 24, color: 'var(--apple-secondary)' }}>Loading...</div>
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
       <div className="flex flex-col h-full">
+        {/* Notification banner */}
+        {dueNotifCount > 0 && canAssign && (
+          <Link to="/notifications" style={{
+            background: 'linear-gradient(135deg, #fff8ef 0%, #fff0e0 100%)',
+            borderBottom: '1px solid #f0ad4e40',
+            padding: '10px 16px', textDecoration: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--apple-text)' }}>
+              {dueNotifCount} homeowner{dueNotifCount !== 1 ? 's' : ''} to contact today before crews arrive
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--apple-blue)' }}>View</span>
+          </Link>
+        )}
+
         {/* Phase toggle — segmented control */}
         <div className="flex justify-center p-3" style={{ borderBottom: '1px solid var(--apple-separator)' }}>
           <div className="flex p-1 gap-0.5" style={{ background: 'var(--apple-segment-bg)', borderRadius: 10 }}>

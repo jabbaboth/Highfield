@@ -7,6 +7,7 @@ import { ContractDataProvider } from './lib/useContractData'
 import Jobs from './pages/Jobs'
 import Planner from './pages/Planner'
 import WorkAuthorities from './pages/WorkAuthorities'
+import Notifications from './pages/Notifications'
 import Progress from './pages/Progress'
 import Settings from './pages/Settings'
 
@@ -33,6 +34,9 @@ function AuthedApp() {
           } />
           <Route path="/planner" element={<Planner />} />
           <Route path="/work-authorities" element={<WorkAuthorities />} />
+          <Route path="/notifications" element={
+            <RoleRoute allowed={['admin', 'foreman']}><Notifications /></RoleRoute>
+          } />
           <Route path="/progress" element={
             <RoleRoute allowed={['admin', 'foreman']}><Progress /></RoleRoute>
           } />
