@@ -7,11 +7,24 @@ import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { Link } from 'react-router-dom'
 import { useContractData } from '../lib/useContractData'
 import { useAuth } from '../lib/useAuth'
+import { supabase } from '../lib/supabase'
 import { feederStyle, PHASES, crewColor } from '../lib/feeder'
 
-function formatDate(d) { return d.toISOString().split('T')[0] }
+function formatDate(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
-// Draggable job tile
+function formatPhone(phone) {
+  if (!phone) return ''
+  const digits = phone.replace(/\D/g, '')
+  if (digits.startsWith('64')) return `+${digits}`
+  if (digits.startsWith('0')) return `+64${digits.slice(1)}`
+  return phone
+}
+
 function DraggableJob({ id, children }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: String(id) })
   return (
@@ -31,7 +44,6 @@ function DraggableJob({ id, children }) {
   )
 }
 
-// Droppable zone
 function DroppableZone({ id, isOver, children }) {
   const { setNodeRef } = useDroppable({ id })
   return (
@@ -51,11 +63,20 @@ function DroppableZone({ id, isOver, children }) {
   )
 }
 
-// Job tile card for planner
-function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign, noWaCoverage }) {
-  const fs = feederStyle(job.feeder)
+function DetailRow({ label, value }) {
+  if (!value && value !== 0) return null
+  return (
+    <div style={{ display: 'flex', gap: 8, fontSize: 11, lineHeight: 1.5 }}>
+      <span style={{ color: 'var(--apple-tertiary)', fontWeight: 500, minWidth: 70, flexShrink: 0 }}>{label}</span>
+      <span style={{ color: 'var(--apple-text)', wordBreak: 'break-word' }}>{value}</span>
+    </div>
+  )
+}
+
+function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign, noWaCoverage, dotColor, expanded, onToggle, waInfo }) {
   return (
     <div
+      onClick={onToggle}
       style={{
         background: noWaCoverage ? '#fff8f0' : 'var(--apple-bg)',
         borderRadius: 8,
@@ -66,7 +87,7 @@ function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign
       }}
     >
       <div className="flex items-start gap-2">
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: fs.border, flexShrink: 0, marginTop: 4 }} />
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0, marginTop: 4 }} />
         <div className="flex-1 min-w-0">
           <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--apple-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {job.full_address}
@@ -75,7 +96,7 @@ function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign
             <span>{job.spans || 0} spans</span>
             <span>{parseFloat(job[phaseInfo.hrsField]) || 0}h</span>
             {job.tm_type && <span style={{ color: '#c0392b' }}>{job.tm_type}</span>}
-            {noWaCoverage && <span title="No work authority for this feeder on this date" style={{ color: '#f0ad4e', fontWeight: 600 }}>No WA</span>}
+            {noWaCoverage && <span style={{ color: '#f0ad4e', fontWeight: 600 }}>No WA</span>}
           </div>
         </div>
         <div className="flex gap-1">
@@ -88,7 +109,7 @@ function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign
                 color: 'var(--apple-green)', fontSize: 12, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
-            >✓</button>
+            >&#10003;</button>
           )}
           {canAssign && onUnassign && (
             <button
@@ -99,10 +120,62 @@ function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign
                 color: 'var(--apple-red)', fontSize: 12, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
-            >×</button>
+            >x</button>
           )}
         </div>
       </div>
+
+      {expanded && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--apple-separator)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <DetailRow label="Job ID" value={job.job_id} />
+            <DetailRow label="Address" value={job.full_address} />
+            <DetailRow label="Owner" value={job.owner} />
+            {job.phone && (
+              <div style={{ display: 'flex', gap: 8, fontSize: 11, lineHeight: 1.5 }}>
+                <span style={{ color: 'var(--apple-tertiary)', fontWeight: 500, minWidth: 70, flexShrink: 0 }}>Phone</span>
+                <a href={`tel:${formatPhone(job.phone)}`} style={{ color: 'var(--apple-blue)', fontWeight: 600, textDecoration: 'none' }}
+                  onClick={e => e.stopPropagation()}>
+                  {job.phone}
+                </a>
+              </div>
+            )}
+            <DetailRow label="Feeder" value={job.feeder} />
+            <DetailRow label="Spans" value={job.spans} />
+            <DetailRow label="H&S Hrs" value={parseFloat(job.hs_hrs) || null} />
+            <DetailRow label="EWP Hrs" value={parseFloat(job.ewp_hrs) || null} />
+            <DetailRow label="Cleanup Hrs" value={parseFloat(job.cleanup_hrs) || null} />
+            <DetailRow label="TM Type" value={job.tm_type} />
+            <DetailRow label="Notify" value={job.notify} />
+            <DetailRow label="OK Lett" value={job.ok_lett} />
+            <DetailRow label="Comments" value={job.comments} />
+            <DetailRow label="Additional" value={job.additional} />
+            {waInfo && waInfo.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, fontSize: 11, lineHeight: 1.5 }}>
+                <span style={{ color: 'var(--apple-tertiary)', fontWeight: 500, minWidth: 70, flexShrink: 0 }}>WA</span>
+                <div className="flex flex-wrap gap-1">
+                  {waInfo.map(wa => (
+                    <span key={wa.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: wa.color || '#9ca3af' }} />
+                      <span style={{ color: 'var(--apple-text)', fontWeight: 500 }}>{wa.wa_number}</span>
+                      {wa.pdf_path && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            const { data } = await supabase.storage.from('work-authorities').createSignedUrl(wa.pdf_path, 3600)
+                            if (data) window.open(data.signedUrl, '_blank')
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--apple-blue)', cursor: 'pointer', fontSize: 11, fontWeight: 500, padding: 0 }}
+                        >PDF</button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -115,6 +188,7 @@ export default function Planner() {
   const [activePhase, setActivePhase] = useState('main')
   const [activeId, setActiveId] = useState(null)
   const [overId, setOverId] = useState(null)
+  const [expandedJobId, setExpandedJobId] = useState(null)
 
   const phaseInfo = PHASES.find(p => p.key === activePhase) || PHASES[0]
   const canAssign = role === 'admin' || role === 'foreman'
@@ -140,7 +214,24 @@ export default function Planner() {
     return set
   }, [workAuthorities, date])
 
-  // Sensors: pointer + touch with 150ms delay
+  const waColorByFeeder = useMemo(() => {
+    const map = {}
+    workAuthorities.forEach(wa => {
+      if (wa.color && !map[String(wa.feeder)]) map[String(wa.feeder)] = wa.color
+    })
+    return map
+  }, [workAuthorities])
+
+  const wasByFeeder = useMemo(() => {
+    const map = {}
+    workAuthorities.forEach(wa => {
+      const f = String(wa.feeder)
+      if (!map[f]) map[f] = []
+      map[f].push(wa)
+    })
+    return map
+  }, [workAuthorities])
+
   const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } })
   const sensors = useSensors(pointerSensor, touchSensor)
@@ -174,7 +265,6 @@ export default function Planner() {
     })
   }, [jobs, assignmentsByJob, completionsByJob, activePhase])
 
-  // Find which crew a job is currently in
   const findJobCrew = useCallback((jobId) => {
     const jid = String(jobId)
     const asg = dayAssignments.find(a => String(a.job_id) === jid)
@@ -194,7 +284,12 @@ export default function Planner() {
     return 'var(--apple-green)'
   }
 
-  // DnD handlers
+  function getDotColor(job) {
+    const feederColor = waColorByFeeder[String(job.feeder)]
+    if (feederColor) return feederColor
+    return feederStyle(job.feeder).border
+  }
+
   function handleDragStart(event) { setActiveId(event.active.id) }
   function handleDragOver(event) { setOverId(event.over?.id || null) }
 
@@ -204,19 +299,14 @@ export default function Planner() {
     if (!over || !canAssign) return
 
     const jobId = active.id
-    const targetId = over.id // crew name or 'unplanned'
+    const targetId = over.id
     const currentCrew = findJobCrew(jobId)
 
     if (targetId === 'unplanned') {
-      // Drag to unplanned = unassign
       if (currentCrew) await unassignJob(Number(jobId), activePhase)
     } else {
-      // Drag to a crew column
-      if (currentCrew === targetId) return // same column, no-op
-      if (currentCrew) {
-        // Reassign: unassign then assign to new crew
-        await unassignJob(Number(jobId), activePhase)
-      }
+      if (currentCrew === targetId) return
+      if (currentCrew) await unassignJob(Number(jobId), activePhase)
       await assignJobs([Number(jobId)], targetId, date, activePhase, user?.name || '')
     }
   }
@@ -237,7 +327,6 @@ export default function Planner() {
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
       <div className="flex flex-col h-full">
-        {/* Notification banner */}
         {dueNotifCount > 0 && canAssign && (
           <Link to="/notifications" style={{
             background: 'linear-gradient(135deg, #fff8ef 0%, #fff0e0 100%)',
@@ -252,7 +341,6 @@ export default function Planner() {
           </Link>
         )}
 
-        {/* Phase toggle — segmented control */}
         <div className="flex justify-center p-3" style={{ borderBottom: '1px solid var(--apple-separator)' }}>
           <div className="flex p-1 gap-0.5" style={{ background: 'var(--apple-segment-bg)', borderRadius: 10 }}>
             {PHASES.map(p => (
@@ -274,14 +362,12 @@ export default function Planner() {
           </div>
         </div>
 
-        {/* Date picker */}
         <div className="flex items-center justify-center gap-4 p-3" style={{ borderBottom: '1px solid var(--apple-separator)' }}>
-          <button onClick={prevDay} style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--apple-bg)', border: 'none', fontSize: 16, cursor: 'pointer', fontWeight: 600, color: 'var(--apple-secondary)' }}>◀</button>
+          <button onClick={prevDay} style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--apple-bg)', border: 'none', fontSize: 16, cursor: 'pointer', fontWeight: 600, color: 'var(--apple-secondary)' }}>&#9664;</button>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-          <button onClick={nextDay} style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--apple-bg)', border: 'none', fontSize: 16, cursor: 'pointer', fontWeight: 600, color: 'var(--apple-secondary)' }}>▶</button>
+          <button onClick={nextDay} style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--apple-bg)', border: 'none', fontSize: 16, cursor: 'pointer', fontWeight: 600, color: 'var(--apple-secondary)' }}>&#9654;</button>
         </div>
 
-        {/* Crew columns */}
         <div className="flex-1 overflow-auto p-3">
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: `repeat(${Math.max(visibleCrews.length, 1)}, minmax(220px, 1fr))` }}>
             {visibleCrews.map(crew => {
@@ -292,7 +378,6 @@ export default function Planner() {
 
               return (
                 <div key={crew.name} style={{ display: 'flex', flexDirection: 'column' }}>
-                  {/* Column header card */}
                   <div style={{
                     background: 'white', borderRadius: 'var(--apple-radius)',
                     boxShadow: 'var(--apple-shadow)',
@@ -313,7 +398,6 @@ export default function Planner() {
                     </div>
                   </div>
 
-                  {/* Droppable job list */}
                   <DroppableZone id={crew.name} isOver={isOverThis}>
                     <div style={{
                       display: 'flex', flexDirection: 'column', gap: 6, padding: 4,
@@ -334,6 +418,10 @@ export default function Planner() {
                               onUnassign={() => unassignJob(job.job_id, activePhase)}
                               canAssign={canAssign}
                               noWaCoverage={!waCoveredFeeders.has(String(job.feeder))}
+                              dotColor={getDotColor(job)}
+                              expanded={expandedJobId === job.job_id}
+                              onToggle={() => setExpandedJobId(expandedJobId === job.job_id ? null : job.job_id)}
+                              waInfo={wasByFeeder[String(job.feeder)]}
                             />
                           </DraggableJob>
                         )
@@ -345,7 +433,6 @@ export default function Planner() {
             })}
           </div>
 
-          {/* Unplanned jobs — droppable + draggable (admin/foreman only) */}
           {canAssign && (
             <div style={{ marginTop: 24 }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--apple-text)', marginBottom: 8 }}>
@@ -362,6 +449,10 @@ export default function Planner() {
                         job={job} phaseInfo={phaseInfo} isComplete={false}
                         canAssign={false}
                         noWaCoverage={!waCoveredFeeders.has(String(job.feeder))}
+                        dotColor={getDotColor(job)}
+                        expanded={expandedJobId === job.job_id}
+                        onToggle={() => setExpandedJobId(expandedJobId === job.job_id ? null : job.job_id)}
+                        waInfo={wasByFeeder[String(job.feeder)]}
                       />
                     </DraggableJob>
                   ))}
@@ -377,7 +468,6 @@ export default function Planner() {
         </div>
       </div>
 
-      {/* Drag overlay — preview card following cursor */}
       <DragOverlay>
         {activeJob && (
           <div style={{
@@ -387,7 +477,7 @@ export default function Planner() {
             maxWidth: 250, transform: 'scale(1.02)',
           }}>
             <div className="flex items-center gap-2">
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: feederStyle(activeJob.feeder).border }} />
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: getDotColor(activeJob) }} />
               <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--apple-text)' }}>
                 {activeJob.full_address}
               </span>

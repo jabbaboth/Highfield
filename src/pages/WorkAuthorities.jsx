@@ -4,7 +4,14 @@ import { useAuth } from '../lib/useAuth'
 import { supabase } from '../lib/supabase'
 import { FEEDERS, feederStyle } from '../lib/feeder'
 
-function formatDate(d) { return d.toISOString().split('T')[0] }
+const WA_COLORS = ['#2E86AB', '#A23B72', '#F18F01', '#2ecc71', '#9b59b6', '#e74c3c', '#1abc9c', '#f39c12', '#3498db', '#34495e']
+
+function formatDate(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 function formatShort(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
@@ -25,12 +32,15 @@ function getWeekDays(dateStr) {
   return days
 }
 
-function Section({ title, subtitle, children }) {
+function Section({ title, subtitle, children, right }) {
   return (
     <section style={{ background: 'white', borderRadius: 'var(--apple-radius-lg)', boxShadow: 'var(--apple-shadow)', overflow: 'hidden' }}>
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--apple-separator)' }}>
-        <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--apple-text)' }}>{title}</h2>
-        {subtitle && <p style={{ fontSize: 12, color: 'var(--apple-secondary)', marginTop: 2 }}>{subtitle}</p>}
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--apple-separator)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--apple-text)' }}>{title}</h2>
+          {subtitle && <p style={{ fontSize: 12, color: 'var(--apple-secondary)', marginTop: 2 }}>{subtitle}</p>}
+        </div>
+        {right}
       </div>
       <div style={{ padding: 20 }}>{children}</div>
     </section>
@@ -39,20 +49,26 @@ function Section({ title, subtitle, children }) {
 
 export default function WorkAuthorities() {
   const { jobs, workAuthorities, addWorkAuthority, removeWorkAuthority } = useContractData()
-  const { contractId, user } = useAuth()
+  const { contractId, contracts, user } = useAuth()
   const role = user?.role || 'crew'
   const canEdit = role === 'admin' || role === 'foreman'
   const [weekDate, setWeekDate] = useState(() => formatDate(new Date()))
   const fileRef = useRef()
+  const mapRef = useRef()
 
   const [waNumber, setWaNumber] = useState('')
   const [waFeeder, setWaFeeder] = useState('')
+  const [waColor, setWaColor] = useState(WA_COLORS[0])
   const [waDates, setWaDates] = useState([])
   const [waDateInput, setWaDateInput] = useState('')
   const [waNotes, setWaNotes] = useState('')
   const [waFile, setWaFile] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(null)
+  const [uploadingMap, setUploadingMap] = useState(false)
+
+  const contract = contracts.find(c => c.id === contractId)
+  const mapPdfPath = contract?.map_pdf_path
 
   const uniqueFeeders = useMemo(() => {
     const fromJobs = [...new Set(jobs.map(j => String(j.feeder)).filter(Boolean))]
@@ -116,8 +132,8 @@ export default function WorkAuthorities() {
       else pdfPath = fileName
     }
 
-    await addWorkAuthority(waNumber.trim(), waFeeder, waDates, pdfPath, waNotes.trim())
-    setWaNumber(''); setWaFeeder(''); setWaDates([]); setWaNotes(''); setWaFile(null)
+    await addWorkAuthority(waNumber.trim(), waFeeder, waDates, pdfPath, waNotes.trim(), waColor)
+    setWaNumber(''); setWaFeeder(''); setWaDates([]); setWaNotes(''); setWaFile(null); setWaColor(WA_COLORS[0])
     if (fileRef.current) fileRef.current.value = ''
     setSubmitting(false)
   }
@@ -134,6 +150,26 @@ export default function WorkAuthorities() {
     setConfirmRemove(null)
   }
 
+  async function handleMapUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingMap(true)
+    const fileName = `${contractId}/map_${Date.now()}_${file.name}`
+    const { error: uploadErr } = await supabase.storage.from('work-authorities').upload(fileName, file)
+    if (uploadErr) { console.error('Map upload:', uploadErr); setUploadingMap(false); return }
+    await supabase.from('contracts').update({ map_pdf_path: fileName }).eq('id', contractId)
+    setUploadingMap(false)
+    if (mapRef.current) mapRef.current.value = ''
+    window.location.reload()
+  }
+
+  async function handleViewMap() {
+    if (!mapPdfPath) return
+    const { data, error } = await supabase.storage.from('work-authorities').createSignedUrl(mapPdfPath, 3600)
+    if (error) { console.error('Map download:', error); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
   const today = formatDate(new Date())
   const btnPrimary = { background: 'var(--apple-blue)', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'var(--apple-transition)' }
   const btnSecondary = { background: 'var(--apple-bg)', color: 'var(--apple-text)', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }
@@ -141,8 +177,34 @@ export default function WorkAuthorities() {
 
   return (
     <div style={{ padding: 16, maxWidth: 900, margin: '0 auto' }} className="space-y-5">
+      {/* Contract Map */}
+      <Section
+        title="Contract Map"
+        subtitle={mapPdfPath ? 'Map uploaded' : 'Upload a PDF map showing work authority areas'}
+        right={mapPdfPath ? (
+          <button onClick={handleViewMap} style={btnPrimary}>View Map</button>
+        ) : null}
+      >
+        {canEdit && (
+          <div className="flex items-center gap-3">
+            <label style={{
+              display: 'inline-block', textAlign: 'center', padding: '10px 20px', borderRadius: 10,
+              border: '2px dashed var(--apple-separator)', cursor: 'pointer',
+              fontSize: 13, fontWeight: 500,
+              color: uploadingMap ? 'var(--apple-tertiary)' : 'var(--apple-blue)',
+            }}>
+              {uploadingMap ? 'Uploading...' : mapPdfPath ? 'Replace Map PDF' : 'Upload Map PDF'}
+              <input ref={mapRef} type="file" accept=".pdf" onChange={handleMapUpload} disabled={uploadingMap} style={{ display: 'none' }} />
+            </label>
+          </div>
+        )}
+        {!canEdit && !mapPdfPath && (
+          <p style={{ fontSize: 13, color: 'var(--apple-tertiary)', textAlign: 'center' }}>No map uploaded yet</p>
+        )}
+      </Section>
+
       {/* Calendar View */}
-      <Section title="WA Coverage" subtitle="Work authority coverage by feeder per day">
+      <Section title="WA Coverage" subtitle="Work authority coverage by feeder — Mon to Fri">
         <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
           <button onClick={prevWeek} style={{ ...btnSecondary, padding: '6px 12px' }}>&#9664; Prev</button>
           <button onClick={goToday} style={{ ...btnSecondary, padding: '6px 12px', fontSize: 12 }}>Today</button>
@@ -189,16 +251,19 @@ export default function WorkAuthorities() {
                         }}>
                           {hasCoverage ? (
                             <div className="flex flex-wrap justify-center gap-1">
-                              {was.map(wa => (
-                                <span key={wa.id} style={{
-                                  display: 'inline-block', padding: '2px 6px', borderRadius: 4,
-                                  fontSize: 10, fontWeight: 600,
-                                  background: '#d4edda', color: '#155724',
-                                  whiteSpace: 'nowrap',
-                                }}>
-                                  {wa.wa_number}
-                                </span>
-                              ))}
+                              {was.map(wa => {
+                                const c = wa.color || '#155724'
+                                return (
+                                  <span key={wa.id} style={{
+                                    display: 'inline-block', padding: '2px 6px', borderRadius: 4,
+                                    fontSize: 10, fontWeight: 600,
+                                    background: c + '20', color: c,
+                                    whiteSpace: 'nowrap',
+                                  }}>
+                                    {wa.wa_number}
+                                  </span>
+                                )
+                              })}
                             </div>
                           ) : (
                             <span style={{ fontSize: 11, color: 'var(--apple-tertiary)' }}>--</span>
@@ -217,7 +282,7 @@ export default function WorkAuthorities() {
         </div>
       </Section>
 
-      {/* Add WA Form (admin/foreman only) */}
+      {/* Add WA Form */}
       {canEdit && (
         <Section title="Add Work Authority" subtitle="Enter WA details and optionally attach the PDF">
           <form onSubmit={handleSubmit}>
@@ -235,6 +300,24 @@ export default function WorkAuthorities() {
                   ))}
                 </select>
               </div>
+            </div>
+
+            {/* Color */}
+            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--apple-secondary)', display: 'block', marginBottom: 6 }}>Color</label>
+            <div className="flex gap-2 flex-wrap" style={{ marginBottom: 16 }}>
+              {WA_COLORS.map(c => (
+                <button
+                  key={c} type="button"
+                  onClick={() => setWaColor(c)}
+                  style={{
+                    width: 28, height: 28, borderRadius: 8, border: 'none',
+                    background: c, cursor: 'pointer',
+                    outline: waColor === c ? '3px solid var(--apple-blue)' : '2px solid transparent',
+                    outlineOffset: 2,
+                    transition: 'outline 0.15s ease',
+                  }}
+                />
+              ))}
             </div>
 
             {/* Dates */}
@@ -283,17 +366,18 @@ export default function WorkAuthorities() {
       <Section title="Work Authorities" subtitle={`${workAuthorities.length} total`}>
         <div className="space-y-2">
           {workAuthorities.map(wa => {
-            const fs = feederStyle(wa.feeder)
+            const waCol = wa.color || '#9ca3af'
             const dateCount = (wa.dates || []).length
             const firstDate = wa.dates?.[0] ? formatShort(wa.dates[0]) : ''
             const lastDate = wa.dates?.length > 1 ? formatShort(wa.dates[wa.dates.length - 1]) : ''
             return (
-              <div key={wa.id} style={{ padding: '12px 14px', background: 'var(--apple-bg)', borderRadius: 10, borderLeft: `3px solid ${fs.border}` }}>
+              <div key={wa.id} style={{ padding: '12px 14px', background: 'var(--apple-bg)', borderRadius: 10, borderLeft: `4px solid ${waCol}` }}>
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2">
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: waCol, display: 'inline-block' }} />
                       <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--apple-text)' }}>{wa.wa_number}</span>
-                      <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: fs.bg, color: fs.border }}>
+                      <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: waCol + '20', color: waCol }}>
                         {wa.feeder}
                       </span>
                     </div>

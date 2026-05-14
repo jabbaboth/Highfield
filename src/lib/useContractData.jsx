@@ -234,9 +234,10 @@ function useContractDataInternal(auditLog, contractId) {
     return error
   }
 
-  const addWorkAuthority = async (waNumber, feeder, dates, pdfPath = null, notes = '') => {
+  const addWorkAuthority = async (waNumber, feeder, dates, pdfPath = null, notes = '', color = null) => {
     const row = { contract_id: contractId, wa_number: waNumber, feeder, dates, notes }
     if (pdfPath) row.pdf_path = pdfPath
+    if (color) row.color = color
     const { error } = await supabase.from('work_authorities').insert(row)
     if (!error) {
       await fetchWorkAuthorities()
