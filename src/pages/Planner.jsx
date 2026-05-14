@@ -25,6 +25,473 @@ function formatPhone(phone) {
   return phone
 }
 
+function getWeekDays(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  const day = d.getDay()
+  const monday = new Date(d)
+  monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
+  const days = []
+  for (let i = 0; i < 5; i++) {
+    const dd = new Date(monday)
+    dd.setDate(monday.getDate() + i)
+    days.push(formatDate(dd))
+  }
+  return days
+}
+
+function DetailRow({ label, value, large }) {
+  if (!value && value !== 0) return null
+  const sz = large ? 13 : 11
+  const minW = large ? 80 : 70
+  return (
+    <div style={{ display: 'flex', gap: 8, fontSize: sz, lineHeight: 1.6 }}>
+      <span style={{ color: 'var(--apple-tertiary)', fontWeight: 500, minWidth: minW, flexShrink: 0 }}>{label}</span>
+      <span style={{ color: 'var(--apple-text)', wordBreak: 'break-word' }}>{value}</span>
+    </div>
+  )
+}
+
+// ─── Crew View ──────────────────────────────────────────────────────────────
+
+function CrewPlanner() {
+  const { jobs, assignments, completionsByJob, crews, workAuthorities, completeJob, uncompleteJob, loading } = useContractData()
+  const { user, contractId, contracts } = useAuth()
+
+  const [date, setDate] = useState(() => formatDate(new Date()))
+  const [expandedJobId, setExpandedJobId] = useState(null)
+
+  const myCrew = useMemo(() => {
+    if (!user?.name) return null
+    return crews.find(c => c.name.toLowerCase() === user.name.toLowerCase()) ||
+           crews.find(c => c.name.toLowerCase().includes(user.name.toLowerCase())) ||
+           null
+  }, [crews, user])
+
+  const crewName = myCrew?.name
+  const crewType = myCrew?.crew_type || 'hs'
+  const phase = crewType === 'ewp' ? 'bucket' : crewType === 'chip' ? 'chip' : 'main'
+  const phaseInfo = PHASES.find(p => p.key === phase) || PHASES[0]
+
+  const jobMap = useMemo(() => {
+    const m = {}; jobs.forEach(j => { m[String(j.job_id)] = j }); return m
+  }, [jobs])
+
+  const myDayJobs = useMemo(() => {
+    if (!crewName) return []
+    return assignments
+      .filter(a => a.crew_name === crewName && a.planned_date === date && (a.phase || 'main') === phase)
+      .map(a => jobMap[String(a.job_id)])
+      .filter(Boolean)
+  }, [assignments, crewName, date, phase, jobMap])
+
+  const weekDays = useMemo(() => getWeekDays(date), [date])
+
+  const weekStats = useMemo(() => {
+    if (!crewName) return weekDays.map(d => ({ date: d, jobs: 0, spans: 0, hrs: 0 }))
+    return weekDays.map(d => {
+      const dayJobs = assignments
+        .filter(a => a.crew_name === crewName && a.planned_date === d && (a.phase || 'main') === phase)
+        .map(a => jobMap[String(a.job_id)])
+        .filter(Boolean)
+      return {
+        date: d,
+        jobs: dayJobs.length,
+        spans: dayJobs.reduce((s, j) => s + (parseFloat(j.spans) || 0), 0),
+        hrs: dayJobs.reduce((s, j) => s + (parseFloat(j[phaseInfo.hrsField]) || 0), 0),
+      }
+    })
+  }, [weekDays, assignments, crewName, phase, jobMap, phaseInfo])
+
+  const weekTotals = useMemo(() => ({
+    jobs: weekStats.reduce((s, d) => s + d.jobs, 0),
+    spans: weekStats.reduce((s, d) => s + d.spans, 0),
+    hrs: weekStats.reduce((s, d) => s + d.hrs, 0),
+  }), [weekStats])
+
+  const waColorByFeeder = useMemo(() => {
+    const map = {}
+    workAuthorities.forEach(wa => {
+      if (wa.color && !map[String(wa.feeder)]) map[String(wa.feeder)] = wa.color
+    })
+    return map
+  }, [workAuthorities])
+
+  const wasByFeeder = useMemo(() => {
+    const map = {}
+    workAuthorities.forEach(wa => {
+      const f = String(wa.feeder)
+      if (!map[f]) map[f] = []
+      map[f].push(wa)
+    })
+    return map
+  }, [workAuthorities])
+
+  const waCoverageToday = useMemo(() => {
+    const myFeeders = [...new Set(myDayJobs.map(j => String(j.feeder)).filter(Boolean))]
+    return myFeeders.map(f => {
+      const was = workAuthorities.filter(wa => String(wa.feeder) === f && (wa.dates || []).includes(date))
+      return { feeder: f, covered: was.length > 0, was }
+    })
+  }, [myDayJobs, workAuthorities, date])
+
+  const dailySpans = myDayJobs.reduce((s, j) => s + (parseFloat(j.spans) || 0), 0)
+  const dailyHrs = myDayJobs.reduce((s, j) => s + (parseFloat(j[phaseInfo.hrsField]) || 0), 0)
+  const completedCount = myDayJobs.filter(j => !!completionsByJob[String(j.job_id)]?.[phase]).length
+
+  const contract = contracts.find(c => c.id === contractId)
+  const mapPdfPath = contract?.map_pdf_path
+
+  function getDotColor(job) {
+    return waColorByFeeder[String(job.feeder)] || feederStyle(job.feeder).border
+  }
+
+  function hourBarColor(hrs) {
+    if (hrs > 7) return 'var(--apple-red)'
+    if (hrs > 5) return 'var(--apple-orange)'
+    return 'var(--apple-green)'
+  }
+
+  function prevDay() { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() - 1); setDate(formatDate(d)) }
+  function nextDay() { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + 1); setDate(formatDate(d)) }
+
+  const todayStr = formatDate(new Date())
+
+  async function handleViewMap() {
+    if (!mapPdfPath) return
+    const win = window.open('', '_blank')
+    const { data, error } = await supabase.storage.from('work-authorities').createSignedUrl(mapPdfPath, 3600)
+    if (error || !data?.signedUrl) { if (win) win.close(); return }
+    win.location.href = data.signedUrl
+  }
+
+  if (loading) return <div style={{ padding: 24, color: 'var(--apple-secondary)' }}>Loading...</div>
+
+  if (!crewName) return (
+    <div style={{ padding: 40, textAlign: 'center' }}>
+      <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--apple-text)' }}>No crew found</p>
+      <p style={{ fontSize: 14, color: 'var(--apple-secondary)', marginTop: 8 }}>
+        Your account isn't linked to a crew yet. Contact your foreman or admin.
+      </p>
+    </div>
+  )
+
+  const dateDisplay = new Date(date + 'T00:00:00').toLocaleDateString('en-NZ', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  })
+
+  return (
+    <div style={{ maxWidth: 600, margin: '0 auto', paddingBottom: 32 }}>
+      {/* Date navigation */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '14px 16px', background: 'white',
+        borderBottom: '1px solid var(--apple-separator)',
+      }}>
+        <button onClick={prevDay} style={{
+          width: 44, height: 44, borderRadius: 12, background: 'var(--apple-bg)',
+          border: 'none', fontSize: 18, cursor: 'pointer', fontWeight: 600,
+          color: 'var(--apple-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>&#9664;</button>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--apple-text)' }}>{dateDisplay}</p>
+          {date === todayStr && <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--apple-blue)', marginTop: 2 }}>Today</p>}
+        </div>
+        <button onClick={nextDay} style={{
+          width: 44, height: 44, borderRadius: 12, background: 'var(--apple-bg)',
+          border: 'none', fontSize: 18, cursor: 'pointer', fontWeight: 600,
+          color: 'var(--apple-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>&#9654;</button>
+      </div>
+
+      {/* Daily stats */}
+      <div style={{ margin: '16px 16px 0', padding: 16, borderRadius: 16, background: 'white', boxShadow: 'var(--apple-shadow)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: crewColor(crews, crewName) }} />
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--apple-text)' }}>{crewName}</h2>
+          <span style={{
+            fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, marginLeft: 'auto',
+            background: completedCount === myDayJobs.length && myDayJobs.length > 0 ? '#d4edda' : 'var(--apple-bg)',
+            color: completedCount === myDayJobs.length && myDayJobs.length > 0 ? '#155724' : 'var(--apple-secondary)',
+          }}>
+            {completedCount}/{myDayJobs.length} done
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <div style={{ textAlign: 'center', padding: '14px 8px', borderRadius: 12, background: 'var(--apple-bg)' }}>
+            <p style={{ fontSize: 26, fontWeight: 700, color: 'var(--apple-text)' }}>{myDayJobs.length}</p>
+            <p style={{ fontSize: 11, fontWeight: 500, color: 'var(--apple-secondary)', marginTop: 2 }}>Jobs</p>
+          </div>
+          <div style={{ textAlign: 'center', padding: '14px 8px', borderRadius: 12, background: 'var(--apple-bg)' }}>
+            <p style={{ fontSize: 26, fontWeight: 700, color: 'var(--apple-blue)' }}>{dailySpans}</p>
+            <p style={{ fontSize: 11, fontWeight: 500, color: 'var(--apple-secondary)', marginTop: 2 }}>Spans</p>
+          </div>
+          <div style={{ textAlign: 'center', padding: '14px 8px', borderRadius: 12, background: 'var(--apple-bg)' }}>
+            <p style={{ fontSize: 26, fontWeight: 700, color: hourBarColor(dailyHrs) }}>{dailyHrs.toFixed(1)}</p>
+            <p style={{ fontSize: 11, fontWeight: 500, color: 'var(--apple-secondary)', marginTop: 2 }}>Hours</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Weekly overview */}
+      <div style={{ margin: '12px 16px 0', padding: 16, borderRadius: 16, background: 'white', boxShadow: 'var(--apple-shadow)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--apple-text)' }}>This Week</h3>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--apple-blue)' }}>
+            {weekTotals.spans} spans · {weekTotals.hrs.toFixed(1)}h
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {weekStats.map(d => {
+            const isSelected = d.date === date
+            const dayLabel = new Date(d.date + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'short' })
+            const dayNum = new Date(d.date + 'T00:00:00').getDate()
+            return (
+              <button
+                key={d.date}
+                onClick={() => setDate(d.date)}
+                style={{
+                  flex: 1, padding: '10px 4px', borderRadius: 12, border: 'none',
+                  background: isSelected ? 'var(--apple-blue)' : d.date === todayStr ? '#e8f4fd' : 'var(--apple-bg)',
+                  cursor: 'pointer', textAlign: 'center',
+                }}
+              >
+                <p style={{
+                  fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+                  color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--apple-tertiary)',
+                }}>{dayLabel}</p>
+                <p style={{
+                  fontSize: 15, fontWeight: 700, marginTop: 2,
+                  color: isSelected ? 'white' : 'var(--apple-text)',
+                }}>{dayNum}</p>
+                <p style={{
+                  fontSize: 12, fontWeight: 600, marginTop: 4,
+                  color: isSelected ? 'rgba(255,255,255,0.9)' : d.spans > 0 ? 'var(--apple-blue)' : 'var(--apple-tertiary)',
+                }}>
+                  {d.spans > 0 ? `${d.spans}` : '-'}
+                </p>
+                <p style={{
+                  fontSize: 9, fontWeight: 500, marginTop: 1,
+                  color: isSelected ? 'rgba(255,255,255,0.6)' : 'var(--apple-tertiary)',
+                }}>
+                  {d.spans > 0 ? 'spans' : ''}
+                </p>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Quick links: Map */}
+      {mapPdfPath && (
+        <div style={{ margin: '12px 16px 0' }}>
+          <button onClick={handleViewMap} style={{
+            width: '100%', padding: '14px 16px', borderRadius: 12,
+            background: 'white', boxShadow: 'var(--apple-shadow)',
+            border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--apple-text)' }}>Contract Map</span>
+            <span style={{ fontSize: 13, color: 'var(--apple-blue)', fontWeight: 600 }}>View PDF &#8250;</span>
+          </button>
+        </div>
+      )}
+
+      {/* WA coverage for today's feeders */}
+      {waCoverageToday.length > 0 && (
+        <div style={{ margin: '12px 16px 0', padding: 16, borderRadius: 16, background: 'white', boxShadow: 'var(--apple-shadow)' }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--apple-text)', marginBottom: 10 }}>WA Coverage</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {waCoverageToday.map(({ feeder, covered, was }) => (
+              <div key={feeder} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                borderRadius: 10, background: covered ? '#d4edda' : '#fff3cd',
+              }}>
+                <span style={{ fontSize: 16, fontWeight: 700, color: covered ? '#155724' : '#856404' }}>
+                  {covered ? '✓' : '!'}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--apple-text)' }}>
+                  {feederStyle(feeder).label || feeder}
+                </span>
+                <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                  {covered ? was.map(w => (
+                    <span key={w.id} style={{
+                      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6,
+                      background: (w.color || '#155724') + '20', color: w.color || '#155724',
+                    }}>{w.wa_number}</span>
+                  )) : (
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#856404' }}>No WA</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Job list */}
+      <div style={{ margin: '16px 16px 0' }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--apple-text)', marginBottom: 10, padding: '0 4px' }}>
+          Today's Jobs
+        </h3>
+
+        {myDayJobs.length === 0 && (
+          <div style={{
+            padding: 40, textAlign: 'center', borderRadius: 16,
+            background: 'white', boxShadow: 'var(--apple-shadow)',
+          }}>
+            <p style={{ fontSize: 16, fontWeight: 500, color: 'var(--apple-secondary)' }}>No jobs planned</p>
+            <p style={{ fontSize: 13, color: 'var(--apple-tertiary)', marginTop: 6 }}>
+              Use the week view above to check other days
+            </p>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {myDayJobs.map(job => {
+            const jid = String(job.job_id)
+            const isComplete = !!completionsByJob[jid]?.[phase]
+            const expanded = expandedJobId === job.job_id
+            const dotColor = getDotColor(job)
+            const noWa = !workAuthorities.some(wa =>
+              String(wa.feeder) === String(job.feeder) && (wa.dates || []).includes(date)
+            )
+
+            return (
+              <div
+                key={job.job_id}
+                onClick={() => setExpandedJobId(expanded ? null : job.job_id)}
+                style={{
+                  background: isComplete ? '#f0fff0' : noWa ? '#fff8f0' : 'white',
+                  borderRadius: 14, padding: '14px 16px',
+                  boxShadow: 'var(--apple-shadow)',
+                  border: isComplete ? '1px solid #c3e6cb' : noWa ? '1px solid #f0ad4e40' : '1px solid rgba(0,0,0,0.04)',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <span style={{
+                    width: 10, height: 10, borderRadius: '50%', background: dotColor,
+                    flexShrink: 0, marginTop: 5,
+                  }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{
+                      fontSize: 15, fontWeight: 600,
+                      color: isComplete ? 'var(--apple-secondary)' : 'var(--apple-text)',
+                      textDecoration: isComplete ? 'line-through' : 'none',
+                    }}>
+                      {job.full_address}
+                    </p>
+                    <div style={{ display: 'flex', gap: 12, marginTop: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--apple-blue)' }}>
+                        {parseFloat(job.spans) || 0} spans
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--apple-secondary)' }}>
+                        {(parseFloat(job[phaseInfo.hrsField]) || 0).toFixed(1)}h
+                      </span>
+                      {job.tm_type && (
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, color: '#c0392b',
+                          padding: '2px 8px', borderRadius: 6, background: '#c0392b12',
+                        }}>{job.tm_type}</span>
+                      )}
+                      {noWa && (
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, color: '#f0ad4e',
+                          padding: '2px 8px', borderRadius: 6, background: '#f0ad4e20',
+                        }}>No WA</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={e => {
+                      e.stopPropagation()
+                      if (isComplete) uncompleteJob(job.job_id, phase)
+                      else completeJob(job.job_id, phase, user?.id, user?.name)
+                    }}
+                    style={{
+                      width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+                      border: isComplete ? 'none' : '2.5px solid var(--apple-green)',
+                      background: isComplete ? 'var(--apple-green)' : 'transparent',
+                      color: isComplete ? 'white' : 'var(--apple-green)',
+                      fontSize: 20, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >&#10003;</button>
+                </div>
+
+                {expanded && (
+                  <div style={{
+                    marginTop: 14, paddingTop: 14,
+                    borderTop: '1px solid var(--apple-separator)',
+                    display: 'flex', flexDirection: 'column', gap: 6,
+                  }}>
+                    <DetailRow large label="Job ID" value={job.job_id} />
+                    <DetailRow large label="Address" value={job.full_address} />
+                    <DetailRow large label="Owner" value={job.owner} />
+                    {job.phone && (
+                      <div style={{ display: 'flex', gap: 8, fontSize: 13, lineHeight: 1.6 }}>
+                        <span style={{ color: 'var(--apple-tertiary)', fontWeight: 500, minWidth: 80, flexShrink: 0 }}>Phone</span>
+                        <a href={`tel:${formatPhone(job.phone)}`}
+                          onClick={e => e.stopPropagation()}
+                          style={{ color: 'var(--apple-blue)', fontWeight: 600, textDecoration: 'none', fontSize: 16 }}>
+                          {job.phone}
+                        </a>
+                      </div>
+                    )}
+                    <DetailRow large label="Feeder" value={job.feeder} />
+                    <DetailRow large label="Spans" value={job.spans} />
+                    <DetailRow large label="H&S Hrs" value={parseFloat(job.hs_hrs) || null} />
+                    <DetailRow large label="EWP Hrs" value={parseFloat(job.ewp_hrs) || null} />
+                    <DetailRow large label="Cleanup" value={parseFloat(job.cleanup_hrs) || null} />
+                    <DetailRow large label="TM Type" value={job.tm_type} />
+                    <DetailRow large label="Notify" value={job.notify} />
+                    <DetailRow large label="OK Lett" value={job.ok_lett} />
+                    <DetailRow large label="Comments" value={job.comments} />
+                    <DetailRow large label="Additional" value={job.additional} />
+                    {wasByFeeder[String(job.feeder)]?.length > 0 && (
+                      <div style={{ display: 'flex', gap: 8, fontSize: 13, lineHeight: 1.6 }}>
+                        <span style={{ color: 'var(--apple-tertiary)', fontWeight: 500, minWidth: 80, flexShrink: 0 }}>WA</span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {wasByFeeder[String(job.feeder)].map(wa => (
+                            <span key={wa.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ width: 7, height: 7, borderRadius: '50%', background: wa.color || '#9ca3af' }} />
+                              <span style={{ fontWeight: 500 }}>{wa.wa_number}</span>
+                              {wa.pdf_path && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation()
+                                    const win = window.open('', '_blank')
+                                    const { data } = await supabase.storage.from('work-authorities').createSignedUrl(wa.pdf_path, 3600)
+                                    if (data?.signedUrl) win.location.href = data.signedUrl
+                                    else if (win) win.close()
+                                  }}
+                                  style={{
+                                    background: 'var(--apple-blue)', color: 'white',
+                                    border: 'none', borderRadius: 6, padding: '3px 8px',
+                                    fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                                  }}
+                                >PDF</button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Admin / Foreman View ───────────────────────────────────────────────────
+
 function DraggableJob({ id, children }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: String(id) })
   return (
@@ -59,16 +526,6 @@ function DroppableZone({ id, isOver, children }) {
       }}
     >
       {children}
-    </div>
-  )
-}
-
-function DetailRow({ label, value }) {
-  if (!value && value !== 0) return null
-  return (
-    <div style={{ display: 'flex', gap: 8, fontSize: 11, lineHeight: 1.5 }}>
-      <span style={{ color: 'var(--apple-tertiary)', fontWeight: 500, minWidth: 70, flexShrink: 0 }}>{label}</span>
-      <span style={{ color: 'var(--apple-text)', wordBreak: 'break-word' }}>{value}</span>
     </div>
   )
 }
@@ -182,7 +639,7 @@ function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign
   )
 }
 
-export default function Planner() {
+function AdminPlanner() {
   const { jobs, assignments, assignmentsByJob, completionsByJob, crews, workAuthorities, notifications, assignJobs, unassignJob, completeJob, loading } = useContractData()
   const { user } = useAuth()
   const role = user?.role || 'crew'
@@ -195,18 +652,11 @@ export default function Planner() {
   const phaseInfo = PHASES.find(p => p.key === activePhase) || PHASES[0]
   const canAssign = role === 'admin' || role === 'foreman'
 
-  const userCrewName = useMemo(() => {
-    if (role !== 'crew') return null
-    const match = crews.find(c => c.name.toLowerCase().includes(user?.name?.toLowerCase()))
-    return match?.name || null
-  }, [role, crews, user])
-
   const phaseCrewType = activePhase === 'main' ? 'hs' : activePhase === 'bucket' ? 'ewp' : 'chip'
 
   const visibleCrews = useMemo(() => {
-    if (role === 'crew' && userCrewName) return crews.filter(c => c.name === userCrewName)
     return crews.filter(c => !c.crew_type || c.crew_type === phaseCrewType)
-  }, [role, userCrewName, crews, phaseCrewType])
+  }, [crews, phaseCrewType])
 
   const waCoveredFeeders = useMemo(() => {
     const set = new Set()
@@ -489,4 +939,13 @@ export default function Planner() {
       </DragOverlay>
     </DndContext>
   )
+}
+
+// ─── Router entry point ─────────────────────────────────────────────────────
+
+export default function Planner() {
+  const { user } = useAuth()
+  const role = user?.role || 'crew'
+  if (role === 'crew') return <CrewPlanner />
+  return <AdminPlanner />
 }
