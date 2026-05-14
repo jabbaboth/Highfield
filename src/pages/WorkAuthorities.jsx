@@ -49,7 +49,7 @@ function Section({ title, subtitle, children, right }) {
 
 export default function WorkAuthorities() {
   const { jobs, workAuthorities, addWorkAuthority, removeWorkAuthority } = useContractData()
-  const { contractId, contracts, user } = useAuth()
+  const { contractId, contracts, user, fetchContracts } = useAuth()
   const role = user?.role || 'crew'
   const canEdit = role === 'admin' || role === 'foreman'
   const [weekDate, setWeekDate] = useState(() => formatDate(new Date()))
@@ -140,9 +140,14 @@ export default function WorkAuthorities() {
 
   async function handleViewPdf(wa) {
     if (!wa.pdf_path) return
+    const win = window.open('', '_blank')
     const { data, error } = await supabase.storage.from('work-authorities').createSignedUrl(wa.pdf_path, 3600)
-    if (error) { console.error('PDF download:', error); return }
-    window.open(data.signedUrl, '_blank')
+    if (error || !data?.signedUrl) {
+      if (win) win.close()
+      console.error('PDF download:', error)
+      return
+    }
+    win.location.href = data.signedUrl
   }
 
   async function handleRemove(id) {
@@ -160,14 +165,19 @@ export default function WorkAuthorities() {
     await supabase.from('contracts').update({ map_pdf_path: fileName }).eq('id', contractId)
     setUploadingMap(false)
     if (mapRef.current) mapRef.current.value = ''
-    window.location.reload()
+    await fetchContracts()
   }
 
   async function handleViewMap() {
     if (!mapPdfPath) return
+    const win = window.open('', '_blank')
     const { data, error } = await supabase.storage.from('work-authorities').createSignedUrl(mapPdfPath, 3600)
-    if (error) { console.error('Map download:', error); return }
-    window.open(data.signedUrl, '_blank')
+    if (error || !data?.signedUrl) {
+      if (win) win.close()
+      console.error('Map download:', error)
+      return
+    }
+    win.location.href = data.signedUrl
   }
 
   const today = formatDate(new Date())

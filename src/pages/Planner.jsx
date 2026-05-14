@@ -162,8 +162,10 @@ function JobTile({ job, phaseInfo, isComplete, onComplete, onUnassign, canAssign
                         <button
                           onClick={async (e) => {
                             e.stopPropagation()
+                            const win = window.open('', '_blank')
                             const { data } = await supabase.storage.from('work-authorities').createSignedUrl(wa.pdf_path, 3600)
-                            if (data) window.open(data.signedUrl, '_blank')
+                            if (data?.signedUrl) win.location.href = data.signedUrl
+                            else if (win) win.close()
                           }}
                           style={{ background: 'none', border: 'none', color: 'var(--apple-blue)', cursor: 'pointer', fontSize: 11, fontWeight: 500, padding: 0 }}
                         >PDF</button>

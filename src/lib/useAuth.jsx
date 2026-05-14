@@ -269,7 +269,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, users, loadingUsers, bootstrapping,
-      contractId, contractName, contracts,
+      contractId, contractName, contracts, fetchContracts,
       selectContract, clearContract, createContract,
       login, logout, fetchUsers,
       addUser, updateUser, removeUser, auditLog,
