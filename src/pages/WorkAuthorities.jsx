@@ -66,6 +66,7 @@ export default function WorkAuthorities() {
   const [submitting, setSubmitting] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(null)
   const [uploadingMap, setUploadingMap] = useState(false)
+  const [uploadError, setUploadError] = useState(null)
 
   const contract = contracts.find(c => c.id === contractId)
   const mapPdfPath = contract?.map_pdf_path
@@ -123,13 +124,18 @@ export default function WorkAuthorities() {
     e.preventDefault()
     if (!waNumber.trim() || !waFeeder || waDates.length === 0 || submitting) return
     setSubmitting(true)
+    setUploadError(null)
 
     let pdfPath = null
     if (waFile) {
       const fileName = `${contractId}/${Date.now()}_${waFile.name}`
       const { error: uploadErr } = await supabase.storage.from('work-authorities').upload(fileName, waFile)
-      if (uploadErr) console.error('PDF upload:', uploadErr)
-      else pdfPath = fileName
+      if (uploadErr) {
+        console.error('PDF upload:', uploadErr)
+        setUploadError(`PDF upload failed: ${uploadErr.message || uploadErr.statusCode || 'Unknown error'}`)
+      } else {
+        pdfPath = fileName
+      }
     }
 
     await addWorkAuthority(waNumber.trim(), waFeeder, waDates, pdfPath, waNotes.trim(), waColor)
@@ -159,10 +165,22 @@ export default function WorkAuthorities() {
     const file = e.target.files?.[0]
     if (!file) return
     setUploadingMap(true)
+    setUploadError(null)
     const fileName = `${contractId}/map_${Date.now()}_${file.name}`
     const { error: uploadErr } = await supabase.storage.from('work-authorities').upload(fileName, file)
-    if (uploadErr) { console.error('Map upload:', uploadErr); setUploadingMap(false); return }
-    await supabase.from('contracts').update({ map_pdf_path: fileName }).eq('id', contractId)
+    if (uploadErr) {
+      console.error('Map upload:', uploadErr)
+      setUploadError(`Upload failed: ${uploadErr.message || uploadErr.statusCode || 'Unknown error'}`)
+      setUploadingMap(false)
+      return
+    }
+    const { error: updateErr } = await supabase.from('contracts').update({ map_pdf_path: fileName }).eq('id', contractId)
+    if (updateErr) {
+      console.error('Map path save:', updateErr)
+      setUploadError(`File uploaded but failed to save path: ${updateErr.message}`)
+      setUploadingMap(false)
+      return
+    }
     setUploadingMap(false)
     if (mapRef.current) mapRef.current.value = ''
     await fetchContracts()
@@ -196,7 +214,7 @@ export default function WorkAuthorities() {
         ) : null}
       >
         {canEdit && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <label style={{
               display: 'inline-block', textAlign: 'center', padding: '10px 20px', borderRadius: 10,
               border: '2px dashed var(--apple-separator)', cursor: 'pointer',
@@ -206,6 +224,9 @@ export default function WorkAuthorities() {
               {uploadingMap ? 'Uploading...' : mapPdfPath ? 'Replace Map PDF' : 'Upload Map PDF'}
               <input ref={mapRef} type="file" accept=".pdf" onChange={handleMapUpload} disabled={uploadingMap} style={{ display: 'none' }} />
             </label>
+            {uploadError && (
+              <p style={{ fontSize: 12, color: 'var(--apple-red)', fontWeight: 500, width: '100%' }}>{uploadError}</p>
+            )}
           </div>
         )}
         {!canEdit && !mapPdfPath && (
